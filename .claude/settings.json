@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm test)",
+      "Bash(npm run test)",
+      "Bash(npm run kontrol)",
+      "Bash(npm run dogrula)",
+      "Bash(npm run onizleme)",
+      "Bash(npm run kullanici-kontrol:*)",
+      "Bash(node --test:*)",
+      "Bash(npx clasp status)",
+      "Bash(npx clasp show-file-status)",
+      "Bash(npx clasp list-deployments)"
+    ],
+    "ask": [
+      "Bash(npx clasp push:*)",
+      "Bash(npm run push)",
+      "Bash(npx clasp create-deployment:*)",
+      "Bash(npx clasp update-deployment:*)",
+      "Bash(npx clasp run-function:*)"
+    ]
+  }
+}

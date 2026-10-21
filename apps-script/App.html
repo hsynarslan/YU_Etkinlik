@@ -1,0 +1,520 @@
+<script>
+  // ===========================================================================
+  // İstemci uygulaması. Sunucu çağrıları google.script.run ile api_* fonksiyonlarına gider.
+  // Her işlemden sonra api_baslangic ile tüm görünüm yenilenir (MVP için basit ve tutarlı).
+  // ===========================================================================
+
+  const $ = (s, kok) => (kok || document).querySelector(s);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const S = { v: null, sekme: null, acikDetay: null, sadeceAcikGorev: true, takvimMekan: '' };
+
+  const GOREV_ETIKET = { BEKLIYOR: 'Bekliyor', KABUL: 'Kabul edildi', BILGI_ISTENDI: 'Bilgi istendi', RED: 'Reddedildi', TAMAMLANDI: 'Tamamlandı' };
+  const ROL_ETIKET = { TALEP_EDEN: 'Talep eden', BIRIM_ONAYCI: 'Birim onaycısı', HIZMET_BIRIMI: 'Hizmet birimi', EBYS_MUAF: 'EBYS muaf', YONETICI: 'Yönetici' };
+  const PROTOKOL_ETIKET = { STANDART: 'Standart (iç katılımcılar)', DIS_KONUK: 'Dış konuk / konuşmacı var', UST_DUZEY: 'Üst düzey protokol' };
+
+  function cagir(fn, ...args) {
+    return new Promise((coz, red) => {
+      google.script.run
+        .withSuccessHandler((r) => (r && r.ok ? coz(r) : red(new Error((r && r.mesaj) || 'Beklenmeyen bir hata oluştu.'))))
+        .withFailureHandler((e) => red(e))[fn](...args);
+    });
+  }
+
+  let toastZamanlayici;
+  function toast(mesaj, hata) {
+    const t = $('#toast');
+    t.textContent = mesaj;
+    t.className = 'toast gorunur' + (hata ? ' hata' : '');
+    clearTimeout(toastZamanlayici);
+    toastZamanlayici = setTimeout(() => { t.className = 'toast'; }, hata ? 6000 : 3500);
+  }
+
+  async function yukle(sekme) {
+    try {
+      S.v = await cagir('api_baslangic');
+      if (sekme) S.sekme = sekme;
+      ciz();
+    } catch (e) {
+      $('#icerik').innerHTML = `<div class="hata-kutu">${esc(e.message)}</div>`;
+    }
+  }
+
+  /** Buton kilitleyerek sunucu işlemi yapar, sonunda görünümü yeniler. */
+  async function islem(buton, fn, sonrakiSekme) {
+    if (buton) buton.disabled = true;
+    try {
+      const r = await fn();
+      if (r === false) return;
+      if (r && r.mesaj) toast(r.mesaj);
+      await yukle(sonrakiSekme);
+    } catch (e) {
+      toast(e.message, true);
+    } finally {
+      if (buton) buton.disabled = false;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Yardımcılar
+  // ---------------------------------------------------------------------------
+
+  const rol = (r) => S.v.kullanici.roller.includes(r);
+  const talepAcabilir = () => rol('TALEP_EDEN') || rol('EBYS_MUAF') || rol('YONETICI');
+  const muafAcabilir = () => rol('EBYS_MUAF') || rol('YONETICI');
+
+  function tarihTr(s) {
+    if (!s) return '';
+    const d = new Date(s + 'T00:00:00Z');
+    if (isNaN(d)) return s;
+    return d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric', weekday: 'short', timeZone: 'UTC' });
+  }
+  function gunFarki(a, b) { return Math.round((new Date(b + 'T00:00:00Z') - new Date(a + 'T00:00:00Z')) / 864e5); }
+  function birimAdi(id) { const b = S.v.birimler.find((x) => x.BirimID === id); return b ? b.Ad : id; }
+  function rozet(e) { return `<span class="rozet d-${esc(e.Durum)}">${esc(e.DurumEtiket)}</span>`; }
+
+  function dosyaBase64(dosya) {
+    return new Promise((coz, red) => {
+      const r = new FileReader();
+      r.onload = () => coz(String(r.result).split(',')[1]);
+      r.onerror = () => red(new Error('Dosya okunamadı.'));
+      r.readAsDataURL(dosya);
+    });
+  }
+
+  async function ebysVerisi(form, dosyaZorunlu) {
+    const ebysNo = form.ebysNo.value.trim();
+    const ebysTarih = form.ebysTarih.value;
+    const dosya = form.dosya.files[0];
+    if (!ebysNo) throw new Error('EBYS numarasını girin.');
+    if (dosyaZorunlu && !ebysTarih) throw new Error('EBYS onay tarihini girin.');
+    if (dosyaZorunlu && !dosya) throw new Error('EBYS onay yazısını PDF olarak ekleyin.');
+    const veri = { ebysNo, ebysTarih };
+    if (dosya) {
+      if (dosya.size > S.v.ayarlar.pdfMaxMb * 1024 * 1024) throw new Error(`PDF en fazla ${S.v.ayarlar.pdfMaxMb} MB olabilir.`);
+      const pdf = dosya.type === 'application/pdf' || /\.pdf$/i.test(dosya.name);
+      if (!pdf) throw new Error('Yalnızca PDF dosyası yüklenebilir.');
+      veri.dosya = { ad: dosya.name, mimeType: 'application/pdf', base64: await dosyaBase64(dosya) };
+    }
+    return veri;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Çizim
+  // ---------------------------------------------------------------------------
+
+  function sekmeListesi() {
+    const t = [];
+    if (talepAcabilir()) t.push(['yeni', 'Yeni talep']);
+    t.push(['taleplerim', 'Taleplerim', S.v.etkinliklerim.filter((e) => ['ON_REZERVASYON', 'DETAY_BEKLENIYOR'].includes(e.Durum)).length]);
+    if (rol('BIRIM_ONAYCI') || rol('YONETICI')) t.push(['onay', 'Onay bekleyenler', S.v.onayBekleyenler.length]);
+    if (rol('HIZMET_BIRIMI') || rol('YONETICI')) t.push(['gorevler', 'Görevlerim', S.v.gorevlerim.filter((g) => g.Durum === 'BEKLIYOR').length]);
+    t.push(['takvim', 'Takvim']);
+    if (rol('YONETICI')) t.push(['yonetim', 'Yönetim']);
+    return t;
+  }
+
+  function ciz() {
+    const k = S.v.kullanici;
+    $('#kullanici').innerHTML = `<div>${esc(k.adSoyad)} · ${esc(birimAdi(k.birim))}</div>` +
+      k.roller.map((r) => `<span class="rol">${esc(ROL_ETIKET[r] || r)}</span>`).join('');
+
+    const sekmeler = sekmeListesi();
+    if (!S.sekme || !sekmeler.some((s) => s[0] === S.sekme)) S.sekme = sekmeler[0][0];
+    $('#sekmeler').innerHTML = sekmeler.map(([id, ad, n]) =>
+      `<button data-sekme="${id}" ${S.sekme === id ? 'aria-current="page"' : ''}>${esc(ad)}${n ? `<span class="sayac">${n}</span>` : ''}</button>`).join('');
+
+    const ciziciler = { yeni: yeniTalep, taleplerim, onay: onayBekleyenler, gorevler: gorevlerim, takvim, yonetim };
+    $('#icerik').innerHTML = ciziciler[S.sekme]();
+  }
+
+  // --- Yeni talep -------------------------------------------------------------
+
+  function yeniTalep() {
+    const v = S.v;
+    const mekanlar = v.mekanlar.map((m) => `<option value="${esc(m.MekanID)}">${esc(m.Ad)} — ${esc(m.Bina)} (${esc(m.Kapasite)} kişi)</option>`).join('');
+    const muaf = muafAcabilir() ? `
+      <fieldset>
+        <legend>Yetkili birim</legend>
+        <label class="secim"><input type="checkbox" name="ebysMuaf" id="ebysMuaf"> EBYS onayı olmadan aç (üst düzey / acil etkinlik)</label>
+        <div id="muafAlanlar" hidden>
+          <div class="izgara" style="margin-top:10px">
+            <label class="tam">Gerekçe (zorunlu)<textarea name="muafGerekce" placeholder="Neden EBYS onayı beklenmeden açılıyor?"></textarea></label>
+            <label>Düzenleyen birim<select name="duzenleyenBirim"><option value="">Kendi birimim</option>${v.birimler.map((b) => `<option value="${esc(b.BirimID)}">${esc(b.Ad)}</option>`).join('')}</select></label>
+          </div>
+        </div>
+      </fieldset>` : '';
+    return `
+      <form id="f-yeni" class="kart">
+        <h2>Yeni etkinlik talebi</h2>
+        <p class="aciklama">Önce mekân ve tarih için ön rezervasyon açılır. EBYS onayı çıkınca numarasını girerek devam edersiniz.
+          Standart etkinliklerde en az ${v.ayarlar.asgariGun}, üst düzey protokollü etkinliklerde en az ${v.ayarlar.asgariUstDuzeyGun} gün önceden başvurulmalıdır.</p>
+        ${v.mekanlar.length ? '' : '<div class="uyari-kutu">Henüz tanımlı mekân yok. Yöneticinin Mekanlar sayfasını doldurması gerekiyor.</div>'}
+        <div class="izgara" style="margin-top:14px">
+          <label class="tam">Etkinlik adı<input name="ad" required maxlength="200"></label>
+          <label>Tür<select name="tur" required><option value="">Seçin</option>${v.turler.map((t) => `<option>${esc(t)}</option>`).join('')}</select></label>
+          <label>Katılımcıların önem düzeyi<select name="protokolDuzeyi">${Object.entries(PROTOKOL_ETIKET).map(([k, a]) => `<option value="${k}">${esc(a)}</option>`).join('')}</select></label>
+          <label>Mekân<select name="mekanId" required><option value="">Seçin</option>${mekanlar}</select></label>
+          <label>Tahmini katılımcı sayısı<input name="katilimciSayisi" type="number" min="1" required></label>
+          <label>Tarih<input name="tarih" type="date" min="${v.bugun}" required></label>
+          <div class="izgara">
+            <label>Başlangıç<input name="baslangic" type="time" required></label>
+            <label>Bitiş<input name="bitis" type="time" required></label>
+          </div>
+        </div>
+        ${muaf}
+        <div class="eylemler"><button class="btn" type="submit">Ön rezervasyon oluştur</button></div>
+      </form>`;
+  }
+
+  async function yeniTalepGonder(form, buton) {
+    const veri = Object.fromEntries(new FormData(form));
+    veri.ebysMuaf = !!(form.ebysMuaf && form.ebysMuaf.checked);
+    await islem(buton, async () => {
+      let r = await cagir('api_onRezervasyonOlustur', veri);
+      if (r.cakisma) {
+        const liste = r.cakisanlar.map((c) => `• ${c.Ad} (${c.Saat}, ${c.Durum})`).join('\n');
+        if (!confirm(`${r.mesaj}\n${liste}\n\nYedek sıraya alınmak ister misiniz? Mekân boşalırsa size haber verilir.`)) return false;
+        veri.yedegeAl = true;
+        r = await cagir('api_onRezervasyonOlustur', veri);
+      }
+      return r;
+    }, 'taleplerim');
+  }
+
+  // --- Taleplerim -------------------------------------------------------------
+
+  function taleplerim() {
+    const liste = S.v.etkinliklerim;
+    if (!liste.length) return '<p class="bos">Henüz talebiniz yok.</p>';
+    return liste.map(talepKarti).join('');
+  }
+
+  function kartBaslik(e) {
+    return `
+      <div class="kart-ust">
+        <div>
+          <h3>${esc(e.Ad)}</h3>
+          <div class="meta">${tarihTr(e.Tarih)} · ${esc(e.BaslangicSaati)}–${esc(e.BitisSaati)} · ${esc(e.MekanAd)} · ${esc(e.Tur)}</div>
+        </div>
+        <div>${e.EbysMuaf === 'EVET' ? '<span class="rozet muaf">EBYS muaf</span> ' : ''}${rozet(e)}</div>
+      </div>`;
+  }
+
+  function ebysFormu(e, sinif, dugme) {
+    return `
+      <form class="${sinif}" data-id="${esc(e.EtkinlikID)}">
+        <div class="izgara">
+          <label>EBYS numarası<input name="ebysNo" required></label>
+          <label>EBYS onay tarihi<input name="ebysTarih" type="date" max="${S.v.bugun}"></label>
+          <label class="tam">EBYS onay yazısı (PDF, en fazla ${S.v.ayarlar.pdfMaxMb} MB)<input name="dosya" type="file" accept="application/pdf,.pdf"></label>
+        </div>
+        <div class="eylemler"><button class="btn" type="submit">${esc(dugme)}</button></div>
+      </form>`;
+  }
+
+  function gorevTablosu(gorevler) {
+    if (!gorevler || !gorevler.length) return '';
+    return `
+      <div class="tablo-kap"><table>
+        <thead><tr><th>Birim</th><th>Talep</th><th>Durum</th><th>Not</th></tr></thead>
+        <tbody>${gorevler.map((g) => `
+          <tr><td>${esc(birimAdi(g.Birim))}</td><td>${esc(g.Aciklama)}</td>
+          <td><span class="rozet g-${esc(g.Durum)}">${esc(GOREV_ETIKET[g.Durum] || g.Durum)}</span></td><td>${esc(g.Not)}</td></tr>`).join('')}
+        </tbody></table></div>`;
+  }
+
+  function talepKarti(e) {
+    const iptalEdilebilir = (S.v.gecisler[e.Durum] || []).includes('IPTAL');
+    const parcalar = [];
+    if (e.KontrolNotu && ['ON_REZERVASYON', 'DETAY_BEKLENIYOR'].includes(e.Durum)) {
+      parcalar.push(`<div class="${e.Durum === 'ON_REZERVASYON' ? 'hata-kutu' : 'bilgi'}">Onaycı notu: ${esc(e.KontrolNotu)}</div>`);
+    }
+    const uzatma = [];
+
+    switch (e.Durum) {
+      case 'YEDEK':
+        parcalar.push('<div class="uyari-kutu">Mekân bu saatte dolu. Yedek sıradasınız; mekân boşalırsa e-posta ile bilgilendirileceksiniz.</div>');
+        break;
+      case 'ON_REZERVASYON': {
+        const kalan = gunFarki(S.v.bugun, e.OnRezBitis);
+        parcalar.push(`<div class="uyari-kutu">EBYS numarasını <b>${tarihTr(e.OnRezBitis)}</b> tarihine kadar girin (${kalan} gün kaldı). Süre dolarsa ön rezervasyon düşer.</div>`);
+        parcalar.push(ebysFormu(e, 'f-ebys', 'EBYS bilgilerini gönder'));
+        if (Number(e.UzatmaSayisi || 0) < S.v.ayarlar.maxUzatma) {
+          uzatma.push(`<button class="btn ikincil" data-eylem="uzat" data-id="${esc(e.EtkinlikID)}">Süreyi uzat</button>`);
+        }
+        break;
+      }
+      case 'EBYS_KONTROL':
+        parcalar.push(`<div class="bilgi">EBYS no <b>${esc(e.EbysNo)}</b> birim onaycısının kontrolünde.
+          ${e.EbysEkUrl ? ` <a href="${esc(e.EbysEkUrl)}" target="_blank" rel="noopener">Onay yazısı</a>` : ''}</div>`);
+        break;
+      case 'DETAY_BEKLENIYOR':
+        if (S.acikDetay === e.EtkinlikID) parcalar.push(detayFormu(e));
+        else parcalar.push(`<div class="bilgi">Şimdi detaylı etkinlik formunu doldurun: afiş, teknik destek, ikram, protokol.</div>
+          <div class="eylemler"><button class="btn" data-eylem="detayAc" data-id="${esc(e.EtkinlikID)}">Detaylı formu doldur</button></div>`);
+        break;
+      case 'HAZIRLIK':
+        parcalar.push('<div class="bilgi">Talepleriniz ilgili birimlerde. Tüm birimler kabul edince etkinlik kesinleşir.</div>');
+        parcalar.push(gorevTablosu(e.Gorevler));
+        break;
+      case 'KESINLESTI':
+      case 'TAMAMLANDI':
+        parcalar.push(gorevTablosu(e.Gorevler));
+        break;
+      default:
+        break;
+    }
+
+    if (e.EbysMuaf === 'EVET' && !e.EbysNo && !['IPTAL', 'SURESI_DOLDU'].includes(e.Durum)) {
+      parcalar.push(`<details style="margin-top:12px"><summary>EBYS numarasını sonradan ekle</summary>${ebysFormu(e, 'f-ebys-sonra', 'EBYS numarasını bağla')}</details>`);
+    }
+    const dugmeler = uzatma.concat(iptalEdilebilir ? [`<button class="btn tehlike" data-eylem="iptal" data-id="${esc(e.EtkinlikID)}">İptal et</button>`] : []);
+    return `<article class="kart">${kartBaslik(e)}<div class="kart-govde">${parcalar.join('')}
+      ${dugmeler.length ? `<div class="eylemler">${dugmeler.join('')}</div>` : ''}</div></article>`;
+  }
+
+  function onayKutusu(ad, etiket, deger) {
+    return `<label class="secim"><input type="checkbox" name="${ad}" ${deger ? 'checked' : ''}> ${esc(etiket)}</label>`;
+  }
+  function secim(ad, etiket, secenekler) {
+    return `<label>${esc(etiket)}<select name="${ad}">${secenekler.map(([v, a]) => `<option value="${v}">${esc(a)}</option>`).join('')}</select></label>`;
+  }
+
+  function detayFormu(e) {
+    const ustDuzey = e.ProtokolDuzeyi === 'UST_DUZEY';
+    return `
+      <form class="f-detay" data-id="${esc(e.EtkinlikID)}">
+        <fieldset><legend>Tanıtım ve iletişim</legend>
+          <div class="izgara">
+            ${secim('afis', 'Afiş', [['YOK', 'Gerek yok'], ['DIJITAL', 'Dijital'], ['BASILI', 'Basılı'], ['DIJITAL_VE_BASILI', 'Dijital ve basılı']])}
+            ${secim('afisTasarim', 'Afişi kim tasarlayacak?', [['KURUMSAL_ILETISIM', 'Kurumsal İletişim'], ['BIRIM', 'Kendi birimimiz (kurumsal kimlik onayıyla)']])}
+            <div class="tam"><div style="font-size:13px;font-weight:600;margin-bottom:4px">Duyuru kanalları</div><div class="secenekler">
+              <label class="secim"><input type="checkbox" name="duyuru" value="SOSYAL_MEDYA"> Sosyal medya</label>
+              <label class="secim"><input type="checkbox" name="duyuru" value="WEB"> Web sitesi</label>
+              <label class="secim"><input type="checkbox" name="duyuru" value="E_POSTA"> E-posta duyurusu</label>
+              <label class="secim"><input type="checkbox" name="duyuru" value="EKRANLAR"> Kampüs ekranları</label>
+            </div></div>
+            <div class="tam secenekler">${onayKutusu('basinDaveti', 'Basın daveti')}${onayKutusu('fotoVideo', 'Fotoğraf / video çekimi')}</div>
+          </div>
+        </fieldset>
+        <fieldset><legend>Teknik destek</legend>
+          <div class="secenekler">
+            ${onayKutusu('ses', 'Ses sistemi')}${onayKutusu('projeksiyon', 'Projeksiyon / ekran')}${onayKutusu('isik', 'Işık')}
+            ${onayKutusu('canliYayin', 'Canlı yayın')}${onayKutusu('kayit', 'Kayıt')}${onayKutusu('hibrit', 'Hibrit katılım (Zoom/Teams)')}
+            ${onayKutusu('simultane', 'Simultane çeviri')}${onayKutusu('misafirWifi', 'Misafir Wi-Fi')}
+          </div>
+          <div class="izgara" style="margin-top:10px"><label>Mikrofon sayısı<input name="mikrofonSayisi" type="number" min="0" value="0"></label></div>
+        </fieldset>
+        <fieldset><legend>Mekân ve lojistik</legend>
+          <div class="izgara">
+            ${secim('oturmaDuzeni', 'Oturma düzeni', [['MEVCUT', 'Mevcut düzen'], ['TIYATRO', 'Tiyatro'], ['SINIF', 'Sınıf'], ['YUVARLAK_MASA', 'Yuvarlak masa'], ['KOKTEYL', 'Kokteyl']])}
+            <label>Kurulum ihtiyacı<input name="kurulumIhtiyaci" placeholder="Kürsü, masa, bayrak, stant, elektrik…"></label>
+            ${secim('ikram', 'İkram', [['YOK', 'Yok'], ['CAY_KAHVE', 'Çay / kahve'], ['KOKTEYL', 'Kokteyl'], ['YEMEK', 'Yemek']])}
+            <label>İkram kişi sayısı<input name="ikramKisi" type="number" min="0" value="${esc(e.KatilimciSayisi)}"></label>
+            <label class="tam">Konuşmacı ulaşım / konaklama<input name="konaklamaUlasim" placeholder="Varsa kim, hangi tarihler"></label>
+          </div>
+        </fieldset>
+        <fieldset><legend>Güvenlik ve protokol</legend>
+          ${ustDuzey ? '<div class="uyari-kutu">Üst düzey protokol seçildiği için Güvenlik ve Protokol birimlerine otomatik görev açılacak.</div>' : ''}
+          <div class="secenekler">${onayKutusu('guvenlik', 'Güvenlik görevlisi')}${onayKutusu('vipOtopark', 'VIP otopark')}</div>
+          <label style="margin-top:10px">Protokol listesi<textarea name="protokolListesi" placeholder="Ad, unvan, kurum — her satıra bir kişi"></textarea></label>
+        </fieldset>
+        <fieldset><legend>Bütçe ve program</legend>
+          <div class="izgara">
+            <label>Tahmini bütçe (TL)<input name="butceTahmini" type="number" min="0"></label>
+            <label>Bütçe kaynağı<input name="butceKaynagi" placeholder="Birim bütçesi, proje, sponsor…"></label>
+            <label class="tam">Program akışı<textarea name="programAkisi"></textarea></label>
+            <label class="tam">Ek açıklama<textarea name="aciklama"></textarea></label>
+          </div>
+        </fieldset>
+        <div class="eylemler">
+          <button class="btn" type="submit">Formu gönder</button>
+          <button class="btn ikincil" type="button" data-eylem="detayKapat">Vazgeç</button>
+        </div>
+      </form>`;
+  }
+
+  function detayTopla(form) {
+    const d = { duyuru: [] };
+    for (const el of form.elements) {
+      if (!el.name) continue;
+      if (el.type === 'checkbox') {
+        if (el.name === 'duyuru') { if (el.checked) d.duyuru.push(el.value); } else d[el.name] = el.checked;
+      } else {
+        d[el.name] = el.value.trim();
+      }
+    }
+    return d;
+  }
+
+  // --- Onay bekleyenler -------------------------------------------------------
+
+  function onayBekleyenler() {
+    const liste = S.v.onayBekleyenler;
+    if (!liste.length) return '<p class="bos">Kontrolünüzü bekleyen EBYS kaydı yok.</p>';
+    return liste.map((e) => `
+      <article class="kart">${kartBaslik(e)}
+        <div class="kart-govde">
+          <div class="meta">Düzenleyen: ${esc(birimAdi(e.DuzenleyenBirim))} · Sorumlu: ${esc(e.SorumluEposta)} · Katılımcı: ${esc(e.KatilimciSayisi)} · ${esc(PROTOKOL_ETIKET[e.ProtokolDuzeyi] || '')}</div>
+          <div class="bilgi">EBYS no <b>${esc(e.EbysNo)}</b> · Onay tarihi ${tarihTr(e.EbysTarih)}
+            ${e.EbysEkUrl ? ` · <a href="${esc(e.EbysEkUrl)}" target="_blank" rel="noopener">Onay yazısını aç</a>` : ''}</div>
+          <label>Not (iade için zorunlu)<textarea data-not="${esc(e.EtkinlikID)}"></textarea></label>
+          <div class="eylemler">
+            <button class="btn" data-eylem="onayla" data-id="${esc(e.EtkinlikID)}">Onayla</button>
+            <button class="btn tehlike" data-eylem="iade" data-id="${esc(e.EtkinlikID)}">Düzeltme için iade et</button>
+          </div>
+        </div>
+      </article>`).join('');
+  }
+
+  // --- Görevlerim -------------------------------------------------------------
+
+  function gorevlerim() {
+    const tum = S.v.gorevlerim;
+    const liste = S.sadeceAcikGorev ? tum.filter((g) => !['KABUL', 'TAMAMLANDI'].includes(g.Durum) || g.Etkinlik.Tarih >= S.v.bugun) : tum;
+    const ust = `<div class="ust-arac"><h2>Birim görevleri</h2>
+      <label class="secim"><input type="checkbox" data-eylem="filtreGorev" ${S.sadeceAcikGorev ? 'checked' : ''}> Yalnızca açık ve yaklaşan</label></div>`;
+    if (!liste.length) return ust + '<p class="bos">Biriminize atanmış görev yok.</p>';
+    return ust + liste.map((g) => `
+      <article class="kart">
+        <div class="kart-ust">
+          <div><h3>${esc(g.Etkinlik.Ad)}</h3>
+            <div class="meta">${tarihTr(g.Etkinlik.Tarih)} · ${esc(g.Etkinlik.Saat)} · ${esc(g.Etkinlik.MekanAd)} · Sorumlu: ${esc(g.Etkinlik.Sorumlu)}</div></div>
+          <span class="rozet g-${esc(g.Durum)}">${esc(GOREV_ETIKET[g.Durum] || g.Durum)}</span>
+        </div>
+        <div class="kart-govde">
+          <div><b>${esc(birimAdi(g.Birim))}</b> · ${esc(g.Aciklama)}</div>
+          <div class="gorev-izgara">
+            <label>Durum<select data-gdurum="${esc(g.GorevID)}">${Object.entries(GOREV_ETIKET).map(([k, a]) => `<option value="${k}" ${g.Durum === k ? 'selected' : ''}>${esc(a)}</option>`).join('')}</select></label>
+            <label>Not<input data-gnot="${esc(g.GorevID)}" value="${esc(g.Not)}" placeholder="Red veya bilgi isteğinde zorunlu"></label>
+            <button class="btn" data-eylem="gorevKaydet" data-id="${esc(g.GorevID)}">Kaydet</button>
+          </div>
+        </div>
+      </article>`).join('');
+  }
+
+  // --- Takvim -----------------------------------------------------------------
+
+  function takvim() {
+    const liste = S.v.takvim.filter((e) => !S.takvimMekan || e.MekanID === S.takvimMekan);
+    const mekanSec = `<select data-eylem="takvimMekan"><option value="">Tüm mekânlar</option>
+      ${S.v.mekanlar.map((m) => `<option value="${esc(m.MekanID)}" ${S.takvimMekan === m.MekanID ? 'selected' : ''}>${esc(m.Ad)}</option>`).join('')}</select>`;
+    let html = `<div class="ust-arac"><h2>Yaklaşan etkinlikler</h2>${mekanSec}</div>`;
+    if (!liste.length) return html + '<p class="bos">Bu filtrede yaklaşan etkinlik yok.</p>';
+    let gun = '';
+    html += '<div class="kart">';
+    liste.forEach((e) => {
+      if (e.Tarih !== gun) { gun = e.Tarih; html += `<div class="gun-baslik">${tarihTr(gun)}</div>`; }
+      html += `<div class="satir"><div class="saat">${esc(e.BaslangicSaati)}–${esc(e.BitisSaati)}</div>
+        <div class="ne"><b>${esc(e.Ad)}</b><div class="meta">${esc(e.MekanAd)} · ${esc(birimAdi(e.DuzenleyenBirim))} · ${esc(e.Tur)}</div></div>${rozet(e)}</div>`;
+    });
+    return html + '</div>';
+  }
+
+  // --- Yönetim ----------------------------------------------------------------
+
+  function yonetim() {
+    const v = S.v;
+    const satirlar = v.tumu.map((e) => {
+      const gecis = v.gecisler[e.Durum] || [];
+      return `<tr>
+        <td><b>${esc(e.Ad)}</b><div class="meta">${esc(e.EtkinlikID)}${e.EbysMuaf === 'EVET' ? ' · EBYS muaf: ' + esc(e.MuafGerekce) : ''}</div></td>
+        <td>${esc(e.Tarih)}<div class="meta">${esc(e.BaslangicSaati)}–${esc(e.BitisSaati)}</div></td>
+        <td>${esc(e.MekanAd)}</td>
+        <td>${esc(birimAdi(e.DuzenleyenBirim))}<div class="meta">${esc(e.SorumluEposta)}</div></td>
+        <td>${rozet(e)}${e.EbysEkUrl ? `<div class="meta"><a href="${esc(e.EbysEkUrl)}" target="_blank" rel="noopener">EBYS ${esc(e.EbysNo)}</a></div>` : ''}</td>
+        <td>${gecis.length ? `<select data-ydurum="${esc(e.EtkinlikID)}"><option value="">Değiştir…</option>${gecis.map((d) => `<option value="${d}">${esc(v.durumEtiket[d])}</option>`).join('')}</select>
+          <button class="btn ikincil" style="margin-top:6px" data-eylem="durumDegistir" data-id="${esc(e.EtkinlikID)}">Uygula</button>` : ''}</td>
+      </tr>`;
+    }).join('');
+    return `
+      <div class="ust-arac"><h2>Tüm etkinlikler</h2>${v.veriUrl ? `<a href="${esc(v.veriUrl)}" target="_blank" rel="noopener">Veri tablosunu aç</a>` : ''}</div>
+      <div class="uyari-kutu">Yedekteki bir etkinliği öne almak çifte rezervasyona yol açabilir; önce çakışan kaydı iptal edin. Kullanıcı, mekân ve ayar değişiklikleri veri tablosundan yapılır.</div>
+      <div class="kart tablo-kap"><table>
+        <thead><tr><th>Etkinlik</th><th>Tarih</th><th>Mekân</th><th>Birim</th><th>Durum</th><th>Elle durum</th></tr></thead>
+        <tbody>${satirlar || '<tr><td colspan="6" class="bos">Kayıt yok.</td></tr>'}</tbody>
+      </table></div>`;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Olaylar
+  // ---------------------------------------------------------------------------
+
+  document.addEventListener('click', async (ev) => {
+    const sekme = ev.target.closest('[data-sekme]');
+    if (sekme) { S.sekme = sekme.dataset.sekme; S.acikDetay = null; ciz(); return; }
+
+    const b = ev.target.closest('button[data-eylem]');
+    if (!b) return;
+    const id = b.dataset.id;
+    switch (b.dataset.eylem) {
+      case 'detayAc': S.acikDetay = id; ciz(); break;
+      case 'detayKapat': S.acikDetay = null; ciz(); break;
+      case 'uzat': {
+        const gerekce = prompt('Uzatma gerekçesi (ör. EBYS onayı rektörlükte bekliyor):');
+        if (!gerekce) return;
+        await islem(b, () => cagir('api_uzat', id, gerekce));
+        break;
+      }
+      case 'iptal': {
+        const gerekce = prompt('İptal gerekçesi:');
+        if (gerekce === null) return;
+        if (!confirm('Etkinlik iptal edilecek ve mekân serbest bırakılacak. Emin misiniz?')) return;
+        await islem(b, () => cagir('api_iptal', id, gerekce));
+        break;
+      }
+      case 'onayla':
+      case 'iade': {
+        const not = $(`[data-not="${id}"]`).value;
+        await islem(b, () => cagir('api_ebysKarar', id, b.dataset.eylem === 'onayla', not));
+        break;
+      }
+      case 'gorevKaydet': {
+        const durum = $(`[data-gdurum="${id}"]`).value;
+        const not = $(`[data-gnot="${id}"]`).value;
+        await islem(b, () => cagir('api_gorevGuncelle', id, durum, not));
+        break;
+      }
+      case 'durumDegistir': {
+        const yeni = $(`[data-ydurum="${id}"]`).value;
+        if (!yeni) { toast('Önce yeni durumu seçin.', true); return; }
+        const not = prompt('Açıklama (zorunlu):');
+        if (!not) return;
+        await islem(b, () => cagir('api_durumDegistir', id, yeni, not));
+        break;
+      }
+    }
+  });
+
+  document.addEventListener('change', (ev) => {
+    const t = ev.target;
+    if (t.id === 'ebysMuaf') $('#muafAlanlar').hidden = !t.checked;
+    if (t.dataset.eylem === 'filtreGorev') { S.sadeceAcikGorev = t.checked; ciz(); }
+    if (t.dataset.eylem === 'takvimMekan') { S.takvimMekan = t.value; ciz(); }
+  });
+
+  document.addEventListener('submit', async (ev) => {
+    const form = ev.target;
+    ev.preventDefault();
+    const buton = form.querySelector('button[type="submit"]');
+    if (form.id === 'f-yeni') return yeniTalepGonder(form, buton);
+
+    const id = form.dataset.id;
+    if (form.classList.contains('f-ebys') || form.classList.contains('f-ebys-sonra')) {
+      const sonra = form.classList.contains('f-ebys-sonra');
+      await islem(buton, async () => {
+        const veri = await ebysVerisi(form, !sonra);
+        return cagir(sonra ? 'api_ebysSonradanBagla' : 'api_ebysGonder', id, veri);
+      });
+    } else if (form.classList.contains('f-detay')) {
+      if (!confirm('Form gönderildikten sonra ilgili birimlere görev açılacak. Devam edilsin mi?')) return;
+      await islem(buton, async () => {
+        const r = await cagir('api_detayKaydet', id, detayTopla(form));
+        S.acikDetay = null;
+        return r;
+      });
+    }
+  });
+
+  yukle();
+</script>

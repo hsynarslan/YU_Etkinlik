@@ -1,0 +1,7 @@
+Eposta,AdSoyad,Birim,Roller,OnayBirimleri,Aktif
+ornek.talep@yasar.edu.tr,Örnek Talep Eden,ORNEK_FAKULTE,TALEP_EDEN,,EVET
+ornek.onayci@yasar.edu.tr,Örnek Onaycı,ORNEK_FAKULTE,"TALEP_EDEN, BIRIM_ONAYCI",ORNEK_FAKULTE,EVET
+ornek.kurumsal@yasar.edu.tr,Örnek Kurumsal İletişim,KURUMSAL_ILETISIM,HIZMET_BIRIMI,,EVET
+ornek.bilgiislem@yasar.edu.tr,Örnek Bilgi İşlem,BILGI_ISLEM,HIZMET_BIRIMI,,EVET
+ornek.gensek@yasar.edu.tr,Örnek Genel Sekreterlik,GENEL_SEKRETERLIK,"TALEP_EDEN, EBYS_MUAF",,EVET
+ornek.yonetici@yasar.edu.tr,Örnek Sistem Yöneticisi,YONETIM,YONETICI,,EVET

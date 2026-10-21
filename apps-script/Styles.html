@@ -1,0 +1,109 @@
+<style>
+  :root {
+    --zemin: #f5f6f8;
+    --kart: #ffffff;
+    --cizgi: #dde1e7;
+    --yazi: #1d2330;
+    --soluk: #5d6677;
+    --vurgu: #1f4e8c;
+    --vurgu-acik: #e7eef8;
+    --iyi: #1e7a4c;
+    --iyi-acik: #e5f4ec;
+    --uyari: #8a5a00;
+    --uyari-acik: #fdf3df;
+    --kotu: #a3302a;
+    --kotu-acik: #fbe9e7;
+    --notr-acik: #eef0f3;
+    --yaricap: 8px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--zemin); color: var(--yazi);
+    font: 15px/1.5 -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  }
+  .ust {
+    display: flex; justify-content: space-between; align-items: center; gap: 16px;
+    padding: 14px 24px; background: var(--vurgu); color: #fff; flex-wrap: wrap;
+  }
+  .marka { display: flex; flex-direction: column; }
+  .marka-ad { font-weight: 600; font-size: 17px; }
+  .marka-alt { font-size: 12px; opacity: .8; }
+  .kullanici { font-size: 13px; text-align: right; }
+  .kullanici .rol { display: inline-block; margin: 2px 0 0 4px; padding: 1px 8px; border-radius: 10px;
+    background: rgba(255,255,255,.18); font-size: 11px; }
+  .sekmeler { display: flex; gap: 4px; padding: 0 24px; background: #fff; border-bottom: 1px solid var(--cizgi);
+    overflow-x: auto; }
+  .sekmeler button {
+    border: 0; background: none; padding: 12px 14px; font: inherit; color: var(--soluk); cursor: pointer;
+    border-bottom: 2px solid transparent; white-space: nowrap;
+  }
+  .sekmeler button[aria-current="page"] { color: var(--vurgu); border-bottom-color: var(--vurgu); font-weight: 600; }
+  .sayac { display: inline-block; min-width: 20px; padding: 0 6px; margin-left: 4px; border-radius: 10px;
+    background: var(--kotu); color: #fff; font-size: 11px; text-align: center; }
+  .icerik { max-width: 980px; margin: 0 auto; padding: 24px 16px 64px; }
+  h2 { font-size: 20px; margin: 0 0 4px; }
+  h3 { font-size: 16px; margin: 0; }
+  .aciklama, .meta { color: var(--soluk); font-size: 13px; }
+  .kart { background: var(--kart); border: 1px solid var(--cizgi); border-radius: var(--yaricap); padding: 18px 20px; margin-bottom: 14px; }
+  .kart-ust { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .kart-govde { margin-top: 12px; }
+  .rozet { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; white-space: nowrap;
+    background: var(--notr-acik); color: var(--soluk); }
+  .d-ON_REZERVASYON, .d-EBYS_KONTROL, .d-YEDEK { background: var(--uyari-acik); color: var(--uyari); }
+  .d-DETAY_BEKLENIYOR, .d-HAZIRLIK { background: var(--vurgu-acik); color: var(--vurgu); }
+  .d-KESINLESTI, .d-TAMAMLANDI, .g-KABUL, .g-TAMAMLANDI { background: var(--iyi-acik); color: var(--iyi); }
+  .d-IPTAL, .d-SURESI_DOLDU, .g-RED { background: var(--kotu-acik); color: var(--kotu); }
+  .g-BILGI_ISTENDI { background: var(--uyari-acik); color: var(--uyari); }
+  .muaf { background: #f1e8fb; color: #5a2d8c; }
+  .bilgi, .uyari-kutu, .hata-kutu { padding: 10px 12px; border-radius: 6px; font-size: 14px; margin: 10px 0; }
+  .bilgi { background: var(--vurgu-acik); color: var(--vurgu); }
+  .uyari-kutu { background: var(--uyari-acik); color: var(--uyari); }
+  .hata-kutu { background: var(--kotu-acik); color: var(--kotu); }
+  form .izgara { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; }
+  form .izgara .tam { grid-column: 1 / -1; }
+  label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; color: var(--yazi); }
+  label.secim { flex-direction: row; align-items: center; gap: 8px; font-weight: 400; font-size: 14px; }
+  input, select, textarea {
+    font: inherit; font-weight: 400; padding: 8px 10px; border: 1px solid var(--cizgi); border-radius: 6px; background: #fff; width: 100%;
+  }
+  input[type="checkbox"] { width: auto; }
+  textarea { min-height: 72px; resize: vertical; }
+  fieldset { border: 1px solid var(--cizgi); border-radius: var(--yaricap); padding: 12px 16px; margin: 14px 0; }
+  legend { font-weight: 600; padding: 0 6px; }
+  .secenekler { display: flex; flex-wrap: wrap; gap: 8px 20px; }
+  .eylemler { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  button.btn {
+    font: inherit; font-size: 14px; padding: 8px 16px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--vurgu); background: var(--vurgu); color: #fff;
+  }
+  button.btn.ikincil { background: #fff; color: var(--vurgu); }
+  button.btn.tehlike { background: #fff; color: var(--kotu); border-color: var(--kotu); }
+  button.btn:disabled { opacity: .55; cursor: wait; }
+  a { color: var(--vurgu); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--cizgi); vertical-align: top; }
+  th { font-size: 12px; color: var(--soluk); font-weight: 600; }
+  .tablo-kap { overflow-x: auto; }
+  .gun-baslik { margin: 22px 0 8px; font-size: 14px; font-weight: 600; color: var(--soluk); }
+  .satir { display: flex; gap: 14px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--cizgi); }
+  .satir .saat { width: 96px; font-variant-numeric: tabular-nums; color: var(--soluk); font-size: 13px; }
+  .satir .ne { flex: 1; }
+  .gorev-izgara { display: grid; grid-template-columns: 200px 1fr auto; gap: 10px; align-items: end; margin-top: 10px; }
+  .bos { color: var(--soluk); text-align: center; padding: 40px 0; }
+  .ust-arac { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+  .ust-arac select { width: auto; }
+  .toast {
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(20px); opacity: 0;
+    background: var(--yazi); color: #fff; padding: 10px 18px; border-radius: 6px; font-size: 14px;
+    transition: opacity .2s, transform .2s; pointer-events: none; max-width: 90vw;
+  }
+  .toast.gorunur { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast.hata { background: var(--kotu); }
+  @media (max-width: 640px) {
+    form .izgara, .gorev-izgara { grid-template-columns: 1fr; }
+    .ust { padding: 12px 16px; }
+    .sekmeler { padding: 0 8px; }
+    .kart { padding: 14px; }
+    .satir { flex-wrap: wrap; }
+  }
+</style>

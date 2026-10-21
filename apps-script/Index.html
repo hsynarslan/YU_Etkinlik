@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="tr">
+  <head>
+    <base target="_top">
+    <meta charset="utf-8">
+    <?!= include_('Styles') ?>
+  </head>
+  <body>
+    <header class="ust">
+      <div class="marka">
+        <span class="marka-ad">Etkinlik Yönetim Sistemi</span>
+        <span class="marka-alt">Yaşar Üniversitesi</span>
+      </div>
+      <div id="kullanici" class="kullanici"></div>
+    </header>
+    <nav id="sekmeler" class="sekmeler" aria-label="Bölümler"></nav>
+    <main id="icerik" class="icerik">
+      <p class="bos">Yükleniyor…</p>
+    </main>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <?!= include_('App') ?>
+  </body>
+</html>

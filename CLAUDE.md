@@ -40,8 +40,8 @@ Proje komutları: `/kullanici-ekle`, `/yeni-alan`, `/yayinla`.
 apps-script/
   Logic.js       Saf iş kuralları + sabitler (DURUM, ROLLER, GECISLER). Google API'si YOK; Node'da test edilir.
   Config.js      Sayfa adları, HEADERS (sütunlar), VARSAYILAN_AYARLAR, etkinlik türleri
-  Db.js          Sheets okuma/yazma, kilitle(), ayar(), logYaz(), bugun()/simdi()
-  Auth.js        aktifKullanici(), yetkiGerekli(), rol/birime göre e-posta listeleri
+  Db.js          Sheets okuma/yazma, kilitle_(), ayar_(), logYaz_(), bugun_()/simdi_()
+  Auth.js        aktifKullanici_(), yetkiGerekli_(), rol/birime göre e-posta listeleri
   Bildirim.js    E-posta (BILDIRIM_AKTIF=HAYIR ise sessiz)
   Rezervasyon.js Ön rezervasyon, uzatma, iptal, yedek terfisi, gunlukSureKontrolu (gece 02:00)
   Ebys.js        EBYS no + PDF, onaycı kararı, muaf etkinliğe sonradan EBYS bağlama
@@ -58,9 +58,9 @@ data/            *.ornek.csv (gerçek listeler .gitignore'da)
 
 1. **İş kuralı Logic.js'e.** Yeni bir kural, doğrulama veya yetki önce `Logic.js`'e saf fonksiyon olarak yazılır ve `tests/logic.test.js`'te test edilir. Diğer dosyalar yalnızca Google servisleriyle konuşur.
 2. **Üst düzeyde dosyalar arası bağımlılık yok.** Apps Script dosya yükleme sırasını garanti etmez. Başka dosyadaki bir şeye (`Logic.DURUM`, `SAYFA`) yalnızca fonksiyon içinden erişin. `npm run kontrol` bunu iki sırada yükleyerek denetler.
-3. **Her yazma `kilitle()` içinde.** Eşzamanlı rezervasyonda çifte kayıt olmasın diye. Kilit içinde önce oku, kontrol et, sonra yaz.
-4. **Durum değişikliği `Logic.gecisKontrol(eski, yeni)` ile** ve her değişiklik `logYaz()` ile kayda geçer.
-5. **İstemciden çağrılan fonksiyonlar `api_` ile başlar,** `api_(fn)` ile sarılır, `{ ok, mesaj, ... }` döner ve ilk iş `aktifKullanici()` + `yetkiGerekli()` çağırır. Sonu `_` ile biten fonksiyonlar istemciye kapalıdır.
+3. **Her yazma `kilitle_()` içinde.** Eşzamanlı rezervasyonda çifte kayıt olmasın diye. Kilit içinde önce oku, kontrol et, sonra yaz.
+4. **Durum değişikliği `Logic.gecisKontrol(eski, yeni)` ile** ve her değişiklik `logYaz_()` ile kayda geçer.
+5. **İstemciden çağrılan fonksiyonlar `api_` ile başlar,** `api_(fn)` ile sarılır, `{ ok, mesaj, ... }` döner ve ilk iş `aktifKullanici_()` + `yetkiGerekli_()` çağırır. Sonu `_` ile biten fonksiyonlar istemciye kapalıdır. **Diğer her üst düzey fonksiyon, web uygulamasındaki her kullanıcı tarafından `google.script.run` ile çağrılabilir;** bu yüzden iç yardımcıların adı `_` ile biter. Editörden çalıştırılan `kurulum()` gibi açık fonksiyonlar ilk iş `yalnizcaSahip_()` çağırır. `npm run kontrol` izin listesi dışındaki açık fonksiyonları yakalar.
 6. **Hücreler düz metin.** Tarih `YYYY-AA-GG`, saat `SS:DD`, zaman `YYYY-AA-GGTSS:DD:SS` (Europe/Istanbul). Sheets'in otomatik tarihe çevirmesine güvenmeyin.
 7. **Sütun eklerken** `HEADERS` listesinin sonuna ekleyin, sırayı bozmayın, `docs/veri-modeli.md`'yi güncelleyin; canlıda `kurulum()` çalıştırılmalı.
 8. **Arayüz metinleri Türkçe**, kullanıcıya gösterilen her şey `esc()` ile kaçırılır.

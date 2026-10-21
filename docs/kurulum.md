@@ -8,7 +8,7 @@ Tercihen kişiye bağlı olmayan bir **servis/birim hesabı** kullanın (ör. `e
 
 ## Gerekenler
 
-- Node.js 18+ ve npm
+- Node.js 22+ ve npm (testler `node --test` glob desteği ister)
 - Apps Script API açık olmalı: https://script.google.com/home/usersettings
 
 ## Adımlar

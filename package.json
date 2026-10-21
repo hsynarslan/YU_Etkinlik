@@ -2,6 +2,7 @@
   "name": "yasar-etkinlik-yonetimi",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "Yaşar Üniversitesi Etkinlik Yönetim Sistemi — Google Apps Script + Google Sheets",
   "scripts": {
     "test": "node --test \"tests/**/*.test.js\"",
@@ -16,6 +17,6 @@
     "@google/clasp": "^3.4.1"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   }
 }

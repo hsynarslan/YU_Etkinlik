@@ -41,3 +41,7 @@ Klasörü Claude Code'da açın; `CLAUDE.md` proje bağlamını ve kuralları ve
 | `tests/` | Node testleri ve sahte Google servisleri |
 | `tools/` | Statik kontrol, önizleme, kullanıcı listesi denetimi |
 | `data/` | Örnek CSV'ler (gerçek listeler repoya girmez) |
+
+## Lisans
+
+MIT. Ayrıntılar için [LICENSE](LICENSE).

@@ -1,0 +1,17 @@
+name: Doğrula
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  dogrula:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - name: Testler ve statik kontrol
+        run: npm run dogrula

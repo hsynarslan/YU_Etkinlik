@@ -6,21 +6,21 @@
  * Kullanıcı Kullanicilar sayfasında yoksa sisteme giremez.
  */
 
-function aktifKullanici() {
+function aktifKullanici_() {
   var eposta = String(Session.getActiveUser().getEmail() || '').toLowerCase();
   if (!eposta) {
     throw new Error('Oturum e-postası alınamadı. Üniversite Google hesabınızla giriş yaptığınızdan emin olun.');
   }
-  var alan = String(ayar('IZINLI_ALAN_ADI') || '').toLowerCase().trim();
+  var alan = String(ayar_('IZINLI_ALAN_ADI') || '').toLowerCase().trim();
   if (alan && eposta.split('@')[1] !== alan) {
     throw new Error('Yalnızca @' + alan + ' hesapları sisteme giriş yapabilir.');
   }
-  return kullaniciBul(eposta);
+  return kullaniciBul_(eposta);
 }
 
-function kullaniciBul(eposta) {
+function kullaniciBul_(eposta) {
   var e = String(eposta).toLowerCase();
-  var k = db_hepsi(SAYFA.KULLANICILAR).filter(function (x) {
+  var k = db_hepsi_(SAYFA.KULLANICILAR).filter(function (x) {
     return String(x.Eposta).toLowerCase() === e && String(x.Aktif).toUpperCase() !== 'HAYIR';
   })[0];
   if (!k) throw new Error(e + ' sistemde tanımlı değil. Yetki için sistem yöneticisine başvurun.');
@@ -34,15 +34,15 @@ function kullaniciBul(eposta) {
 }
 
 /** Yetki yoksa hata fırlatır. */
-function yetkiGerekli(kullanici, islem, hedef) {
+function yetkiGerekli_(kullanici, islem, hedef) {
   if (!Logic.yetkiVarMi(kullanici, islem, hedef)) {
     throw new Error('Bu işlem için yetkiniz yok.');
   }
 }
 
 /** Rol veya birime göre kullanıcı e-postaları. */
-function epostalar(filtre) {
-  return db_hepsi(SAYFA.KULLANICILAR).filter(function (x) {
+function epostalar_(filtre) {
+  return db_hepsi_(SAYFA.KULLANICILAR).filter(function (x) {
     if (String(x.Aktif).toUpperCase() === 'HAYIR') return false;
     var roller = Logic.listeAyristir(x.Roller);
     if (filtre.rol && roller.indexOf(filtre.rol) === -1) return false;
@@ -52,6 +52,6 @@ function epostalar(filtre) {
   }).map(function (x) { return String(x.Eposta).toLowerCase(); });
 }
 
-function yoneticiler() {
-  return epostalar({ rol: Logic.ROLLER.YONETICI });
+function yoneticiler_() {
+  return epostalar_({ rol: Logic.ROLLER.YONETICI });
 }

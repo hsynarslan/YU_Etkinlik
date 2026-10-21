@@ -7,6 +7,8 @@
  *    (Apps Script dosya sırasını garanti etmez; dosyalar arası bağımlılık yalnızca fonksiyon içinde olmalı)
  * 3) App.html'deki cagir('api_x') çağrılarının sunucuda karşılığı olması
  * 4) Şablonlardaki include_('X') dosyalarının var olması
+ * 5) İstemciye açık (adı _ ile bitmeyen) fonksiyonların yalnızca izin verilenler olması.
+ *    Apps Script'te bu fonksiyonların hepsi google.script.run ile her kullanıcı tarafından çağrılabilir.
  */
 const fs = require('fs');
 const path = require('path');
@@ -57,6 +59,13 @@ for (const f of htmlDosyalari) {
   for (const m of html.matchAll(/include_\('(\w+)'\)/g)) {
     if (!htmlDosyalari.includes(m[1] + '.html')) hatalar.push(`${f}: include_('${m[1]}') için ${m[1]}.html yok.`);
   }
+}
+
+// 5) İstemciye açık fonksiyonlar
+const ACIK_IZINLI = new Set(['doGet', 'kurulum', 'ornekVerileriYukle', 'gunlukSureKontrolu', 'gunlukSureKontroluCalistir']);
+for (const ad of sunucuFonksiyonlari) {
+  if (ad.endsWith('_') || ad.startsWith('api_') || ACIK_IZINLI.has(ad)) continue;
+  hatalar.push(`"${ad}" istemciden çağrılabilir. İç fonksiyonsa adının sonuna _ ekleyin; istemci içinse api_ ile başlatıp yetki kontrolü yapın.`);
 }
 
 if (hatalar.length) {

@@ -37,19 +37,19 @@ function istemciEtkinlik_(e) {
   Object.keys(e).forEach(function (k) { if (k.charAt(0) !== '_') o[k] = e[k]; });
   try { o.Detay = e.Detay ? JSON.parse(e.Detay) : null; } catch (ignore) { o.Detay = null; }
   o.DurumEtiket = Logic.DURUM_ETIKET[e.Durum] || e.Durum;
-  o.MekanAd = mekanAdi(e.MekanID);
+  o.MekanAd = mekanAdi_(e.MekanID);
   return o;
 }
 
 /** İlk yükleme ve her işlemden sonra yenileme için tek çağrı. */
 function api_baslangic() {
   return api_(function () {
-    var k = aktifKullanici();
+    var k = aktifKullanici_();
     var R = Logic.ROLLER;
     var D = Logic.DURUM;
-    var gun = bugun();
-    var etkinlikler = db_hepsi(SAYFA.ETKINLIKLER);
-    var gorevler = db_hepsi(SAYFA.GOREVLER);
+    var gun = bugun_();
+    var etkinlikler = db_hepsi_(SAYFA.ETKINLIKLER);
+    var gorevler = db_hepsi_(SAYFA.GOREVLER);
     var temizGorev = function (g) {
       return { GorevID: g.GorevID, EtkinlikID: g.EtkinlikID, Birim: g.Birim, Tur: g.Tur,
         Aciklama: g.Aciklama, Durum: g.Durum, Not: g.Not, GuncellemeZamani: g.GuncellemeZamani };
@@ -80,7 +80,7 @@ function api_baslangic() {
         var e = etkinlikMap[g.EtkinlikID];
         var o = temizGorev(g);
         o.Etkinlik = { Ad: e.Ad, Tarih: e.Tarih, Saat: e.BaslangicSaati + '–' + e.BitisSaati,
-          MekanAd: mekanAdi(e.MekanID), Sorumlu: e.SorumluEposta, DurumEtiket: Logic.DURUM_ETIKET[e.Durum] };
+          MekanAd: mekanAdi_(e.MekanID), Sorumlu: e.SorumluEposta, DurumEtiket: Logic.DURUM_ETIKET[e.Durum] };
         return o;
       })
       .sort(function (a, b) { return String(a.Etkinlik.Tarih).localeCompare(String(b.Etkinlik.Tarih)); });
@@ -89,7 +89,7 @@ function api_baslangic() {
       .filter(function (e) { return e.Tarih >= gun && Logic.AKTIF_DURUMLAR.indexOf(e.Durum) !== -1; })
       .map(function (e) {
         return { EtkinlikID: e.EtkinlikID, Ad: e.Ad, Tur: e.Tur, DuzenleyenBirim: e.DuzenleyenBirim,
-          MekanID: e.MekanID, MekanAd: mekanAdi(e.MekanID), Tarih: e.Tarih,
+          MekanID: e.MekanID, MekanAd: mekanAdi_(e.MekanID), Tarih: e.Tarih,
           BaslangicSaati: e.BaslangicSaati, BitisSaati: e.BitisSaati,
           Durum: e.Durum, DurumEtiket: Logic.DURUM_ETIKET[e.Durum] };
       })
@@ -99,25 +99,25 @@ function api_baslangic() {
     return {
       kullanici: k,
       bugun: gun,
-      mekanlar: db_hepsi(SAYFA.MEKANLAR)
+      mekanlar: db_hepsi_(SAYFA.MEKANLAR)
         .filter(function (m) { return String(m.Aktif).toUpperCase() !== 'HAYIR'; })
         .map(function (m) { return { MekanID: m.MekanID, Ad: m.Ad, Bina: m.Bina, Kapasite: m.Kapasite }; }),
-      birimler: db_hepsi(SAYFA.BIRIMLER).map(function (b) { return { BirimID: b.BirimID, Ad: b.Ad, Tur: b.Tur }; }),
+      birimler: db_hepsi_(SAYFA.BIRIMLER).map(function (b) { return { BirimID: b.BirimID, Ad: b.Ad, Tur: b.Tur }; }),
       turler: ETKINLIK_TURLERI,
       durumEtiket: Logic.DURUM_ETIKET,
       gecisler: Logic.GECISLER,
       ayarlar: {
-        asgariGun: ayarSayi('ASGARI_BASVURU_GUN'),
-        asgariUstDuzeyGun: ayarSayi('ASGARI_BASVURU_UST_DUZEY_GUN'),
-        maxUzatma: ayarSayi('MAX_UZATMA'),
-        pdfMaxMb: ayarSayi('EBYS_PDF_MAX_MB') || 10
+        asgariGun: ayarSayi_('ASGARI_BASVURU_GUN'),
+        asgariUstDuzeyGun: ayarSayi_('ASGARI_BASVURU_UST_DUZEY_GUN'),
+        maxUzatma: ayarSayi_('MAX_UZATMA'),
+        pdfMaxMb: ayarSayi_('EBYS_PDF_MAX_MB') || 10
       },
       etkinliklerim: etkinliklerim,
       onayBekleyenler: onayBekleyenler,
       gorevlerim: gorevlerim,
       takvim: takvim,
       tumu: yonetici ? etkinlikler.slice().sort(yeniOnce).slice(0, 300).map(istemciEtkinlik_) : [],
-      veriUrl: yonetici ? db_ss().getUrl() : ''
+      veriUrl: yonetici ? db_ss_().getUrl() : ''
     };
   });
 }

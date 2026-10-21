@@ -12,6 +12,7 @@ const { yukle } = require('../tests/gas-mock');
 
 const g = yukle();
 const c = g.ctx;
+g.oturum.eposta = 'kurucu@yasar.edu.tr';
 c.kurulum();
 
 const kisiler = [
@@ -20,12 +21,12 @@ const kisiler = [
   ['ki@yasar.edu.tr', 'Kurumsal İletişim', 'KURUMSAL_ILETISIM', 'HIZMET_BIRIMI', '']
 ];
 kisiler.forEach(([Eposta, AdSoyad, Birim, Roller, OnayBirimleri]) =>
-  c.db_ekle('Kullanicilar', { Eposta, AdSoyad, Birim, Roller, OnayBirimleri, Aktif: 'EVET' }));
-c.db_guncelle('Kullanicilar', 'Eposta', 'kurucu@yasar.edu.tr', { AdSoyad: 'Deneme Yöneticisi', Birim: 'ORNEK_FAKULTE' });
+  c.db_ekle_('Kullanicilar', { Eposta, AdSoyad, Birim, Roller, OnayBirimleri, Aktif: 'EVET' }));
+c.db_guncelle_('Kullanicilar', 'Eposta', 'kurucu@yasar.edu.tr', { AdSoyad: 'Deneme Yöneticisi', Birim: 'ORNEK_FAKULTE' });
 c.ornekVerileriYukle();
 
 const PDF = { ad: 'onay.pdf', mimeType: 'application/pdf', base64: Buffer.from('%PDF').toString('base64') };
-const bugun = c.bugun();
+const bugun = c.bugun_();
 const gun = (n) => c.Logic.isGunuEkle(bugun, n);
 const ac = (ad, tarih, bas, bit, ek) => {
   const r = c.api_onRezervasyonOlustur(Object.assign({ ad, tur: 'Seminer', mekanId: 'ORNEK-KS', tarih,
@@ -45,7 +46,7 @@ const hazirlik = ac('Sürdürülebilirlik Çalıştayı', gun(20), '13:00', '16:
 c.api_ebysGonder(hazirlik, { ebysNo: 'E-48214101', ebysTarih: bugun, dosya: PDF });
 c.api_ebysKarar(hazirlik, true, '');
 c.api_detayKaydet(hazirlik, { afis: 'DIJITAL', afisTasarim: 'KURUMSAL_ILETISIM', duyuru: ['SOSYAL_MEDYA', 'WEB'], ses: true, mikrofonSayisi: '2', projeksiyon: true, ikram: 'CAY_KAHVE', ikramKisi: '40', oturmaDuzeni: 'YUVARLAK_MASA' });
-const gorevler = c.db_hepsi('Gorevler').filter((x) => x.EtkinlikID === hazirlik);
+const gorevler = c.db_hepsi_('Gorevler').filter((x) => x.EtkinlikID === hazirlik);
 g.oturum.eposta = 'bi@yasar.edu.tr';
 c.api_gorevGuncelle(gorevler.find((x) => x.Birim === 'BILGI_ISLEM').GorevID, 'KABUL', 'Teknisyen 12:30\'da salonda');
 

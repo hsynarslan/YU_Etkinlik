@@ -7,6 +7,7 @@
  */
 
 function kurulum() {
+  yalnizcaSahip_();
   var props = PropertiesService.getScriptProperties();
   var id = props.getProperty('SPREADSHEET_ID');
   var ss;
@@ -57,20 +58,20 @@ function varsayilanSayfayiSil_(ss) {
 }
 
 function ayarlariTamamla_() {
-  var mevcut = db_hepsi(SAYFA.AYARLAR).map(function (k) { return k.Anahtar; });
+  var mevcut = db_hepsi_(SAYFA.AYARLAR).map(function (k) { return k.Anahtar; });
   VARSAYILAN_AYARLAR.forEach(function (a) {
-    if (mevcut.indexOf(a[0]) === -1) db_ekle(SAYFA.AYARLAR, { Anahtar: a[0], Deger: a[1], Aciklama: a[2] });
+    if (mevcut.indexOf(a[0]) === -1) db_ekle_(SAYFA.AYARLAR, { Anahtar: a[0], Deger: a[1], Aciklama: a[2] });
   });
 }
 
 function ayarYaz_(anahtar, deger) {
-  var kayit = db_hepsi(SAYFA.AYARLAR).filter(function (k) { return k.Anahtar === anahtar; })[0];
-  if (kayit) db_guncelle(SAYFA.AYARLAR, 'Anahtar', anahtar, { Deger: deger });
-  else db_ekle(SAYFA.AYARLAR, { Anahtar: anahtar, Deger: deger, Aciklama: '' });
+  var kayit = db_hepsi_(SAYFA.AYARLAR).filter(function (k) { return k.Anahtar === anahtar; })[0];
+  if (kayit) db_guncelle_(SAYFA.AYARLAR, 'Anahtar', anahtar, { Deger: deger });
+  else db_ekle_(SAYFA.AYARLAR, { Anahtar: anahtar, Deger: deger, Aciklama: '' });
 }
 
 function ebysKlasoruHazirla_() {
-  var id = ayar('EBYS_PDF_KLASOR_ID');
+  var id = ayar_('EBYS_PDF_KLASOR_ID');
   if (id) {
     try { DriveApp.getFolderById(id); return; } catch (e) { /* silinmiş: yeniden oluştur */ }
   }
@@ -79,7 +80,7 @@ function ebysKlasoruHazirla_() {
 }
 
 function hizmetBirimleriniTohumla_() {
-  if (db_hepsi(SAYFA.BIRIMLER).length) return;
+  if (db_hepsi_(SAYFA.BIRIMLER).length) return;
   var adlar = {
     KURUMSAL_ILETISIM: 'Kurumsal İletişim',
     BILGI_ISLEM: 'Bilgi İşlem / Görsel-İşitsel',
@@ -89,15 +90,15 @@ function hizmetBirimleriniTohumla_() {
     PROTOKOL: 'Rektörlük Protokol'
   };
   Object.keys(Logic.HIZMET_BIRIMLERI).forEach(function (kod) {
-    db_ekle(SAYFA.BIRIMLER, { BirimID: kod, Ad: adlar[kod] || kod, Tur: 'HIZMET', Eposta: '' });
+    db_ekle_(SAYFA.BIRIMLER, { BirimID: kod, Ad: adlar[kod] || kod, Tur: 'HIZMET', Eposta: '' });
   });
 }
 
 function ilkYoneticiyiEkle_() {
-  if (db_hepsi(SAYFA.KULLANICILAR).length) return;
+  if (db_hepsi_(SAYFA.KULLANICILAR).length) return;
   var eposta = Session.getEffectiveUser().getEmail();
   if (!eposta) return;
-  db_ekle(SAYFA.KULLANICILAR, {
+  db_ekle_(SAYFA.KULLANICILAR, {
     Eposta: eposta.toLowerCase(), AdSoyad: 'Sistem Yöneticisi', Birim: 'YONETIM',
     Roller: 'YONETICI', OnayBirimleri: '', Aktif: 'EVET'
   });
@@ -128,24 +129,41 @@ function tetikleyiciKur_() {
 
 /** Deneme için örnek mekân ve akademik birim ekler. Gerçek verileri girince bu kayıtları silin. */
 function ornekVerileriYukle() {
-  if (!db_hepsi(SAYFA.MEKANLAR).length) {
+  yalnizcaSahip_();
+  if (!db_hepsi_(SAYFA.MEKANLAR).length) {
     [
       ['ORNEK-KS', 'ÖRNEK Konferans Salonu', 'ÖRNEK Bina', '300'],
       ['ORNEK-SEM1', 'ÖRNEK Seminer Odası 1', 'ÖRNEK Bina', '60'],
       ['ORNEK-FUAYE', 'ÖRNEK Fuaye Alanı', 'ÖRNEK Bina', '150']
     ].forEach(function (m) {
-      db_ekle(SAYFA.MEKANLAR, { MekanID: m[0], Ad: m[1], Bina: m[2], Kapasite: m[3], SorumluBirim: 'TEKNIK_ISLER', Aktif: 'EVET' });
+      db_ekle_(SAYFA.MEKANLAR, { MekanID: m[0], Ad: m[1], Bina: m[2], Kapasite: m[3], SorumluBirim: 'TEKNIK_ISLER', Aktif: 'EVET' });
     });
   }
-  var birimler = db_hepsi(SAYFA.BIRIMLER).map(function (b) { return b.BirimID; });
+  var birimler = db_hepsi_(SAYFA.BIRIMLER).map(function (b) { return b.BirimID; });
   if (birimler.indexOf('ORNEK_FAKULTE') === -1) {
-    db_ekle(SAYFA.BIRIMLER, { BirimID: 'ORNEK_FAKULTE', Ad: 'ÖRNEK Fakülte', Tur: 'AKADEMIK', Eposta: '' });
+    db_ekle_(SAYFA.BIRIMLER, { BirimID: 'ORNEK_FAKULTE', Ad: 'ÖRNEK Fakülte', Tur: 'AKADEMIK', Eposta: '' });
   }
   Logger.log('Örnek veriler eklendi.');
 }
 
 /** Gece görevini elle denemek için. */
 function gunlukSureKontroluCalistir() {
+  yalnizcaSahip_();
   gunlukSureKontrolu();
   Logger.log('Günlük kontrol çalıştı. Log sayfasına bakın.');
+}
+
+/**
+ * Adı `_` ile bitmeyen her fonksiyon, web uygulamasından google.script.run ile çağrılabilir.
+ * Editörden elle çalıştırılan fonksiyonlar bu yüzden açık kalmak zorunda; bu kontrol onları
+ * yalnızca script sahibine (web uygulamasını yayınlayan hesap) açar.
+ * izinliBos: zamanlanmış tetikleyicide etkin kullanıcı e-postası boş gelebilir.
+ */
+function yalnizcaSahip_(izinliBos) {
+  var aktif = String(Session.getActiveUser().getEmail() || '').toLowerCase();
+  var sahip = String(Session.getEffectiveUser().getEmail() || '').toLowerCase();
+  if (!aktif && izinliBos) return;
+  if (!aktif || aktif !== sahip) {
+    throw new Error('Bu fonksiyon yalnızca Apps Script editöründen, script sahibi tarafından çalıştırılabilir.');
+  }
 }

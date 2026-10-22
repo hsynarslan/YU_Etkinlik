@@ -6,7 +6,7 @@
 
   const $ = (s, kok) => (kok || document).querySelector(s);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const S = { v: null, sekme: null, acikDetay: null, sadeceAcikGorev: true, takvimMekan: '' };
+  const S = { v: null, sekme: null, acikDetay: null, sadeceAcikGorev: true, takvimMekan: '', yBolum: 'etkinlikler', yv: null, yHata: '', yYukleniyor: false, duzen: null, yeniSifre: null };
 
   const GOREV_ETIKET = { BEKLIYOR: 'Bekliyor', KABUL: 'Kabul edildi', BILGI_ISTENDI: 'Bilgi istendi', RED: 'Reddedildi', TAMAMLANDI: 'Tamamlandı' };
   const ROL_ETIKET = { TALEP_EDEN: 'Talep eden', BIRIM_ONAYCI: 'Birim onaycısı', HIZMET_BIRIMI: 'Hizmet birimi', EBYS_MUAF: 'EBYS muaf', YONETICI: 'Yönetici' };
@@ -437,7 +437,123 @@
 
   // --- Yönetim ----------------------------------------------------------------
 
+  // --- Yönetim ---------------------------------------------------------------
+
+  const Y_BOLUMLER = [['etkinlikler', 'Etkinlikler'], ['kullanicilar', 'Kullanıcılar'], ['mekanlar', 'Mekânlar'], ['birimler', 'Birimler'], ['ayarlar', 'Ayarlar']];
+
+  async function yonetimYukle() {
+    if (S.yYukleniyor) return;
+    S.yYukleniyor = true;
+    try { S.yv = await cagir('api_yonetimVeri'); S.yHata = ''; } catch (e) { S.yHata = e.message; }
+    S.yYukleniyor = false;
+    ciz();
+  }
+
   function yonetim() {
+    const bar = `<div class="eylemler" style="margin:0 0 14px">${Y_BOLUMLER.map(([id, ad]) =>
+      `<button class="btn ${S.yBolum === id ? '' : 'ikincil'}" data-eylem="yBolum" data-id="${id}">${esc(ad)}</button>`).join('')}</div>`;
+    if (S.yBolum === 'etkinlikler') return bar + yEtkinlikler();
+    if (S.yHata) return bar + `<div class="hata-kutu">${esc(S.yHata)} <button class="btn ikincil" data-eylem="yYenile">Tekrar dene</button></div>`;
+    if (!S.yv) { yonetimYukle(); return bar + '<p class="bos">Yükleniyor…</p>'; }
+    const govde = { kullanicilar: yKullanicilar, mekanlar: yMekanlar, birimler: yBirimler, ayarlar: yAyarlar }[S.yBolum];
+    return bar + govde();
+  }
+
+  const secenek = (liste, secili) => liste.map(([d, a]) => `<option value="${esc(d)}" ${d === secili ? 'selected' : ''}>${esc(a)}</option>`).join('');
+  const duzenKaydi = (tur) => (S.duzen && S.duzen.tur === tur ? S.duzen.kayit : null);
+
+  function yKullanicilar() {
+    const y = S.yv;
+    const d = duzenKaydi('kullanici');
+    const k = d || { Eposta: '', AdSoyad: '', Birim: '', Roller: [], OnayBirimleri: [], Aktif: 'EVET' };
+    const onayAdaylari = y.birimler.filter((b) => b.Tur !== 'HIZMET');
+    const sifreKutu = S.yeniSifre ? `<div class="uyari-kutu"><b>${esc(S.yeniSifre.eposta)}</b> için şifre: <b style="font-family:monospace;font-size:16px">${esc(S.yeniSifre.sifre)}</b><br>
+      Bu şifre yalnızca şimdi gösterilir; kişiye ayrıca iletin. <button class="btn ikincil" style="margin-left:8px" data-eylem="sifreKapat">Kapat</button></div>` : '';
+    const form = `<form id="f-kullanici" class="kart">
+      <h3 style="margin-top:0">${d ? 'Kullanıcıyı düzenle' : 'Yeni kullanıcı'}</h3>
+      <div class="izgara">
+        <label>E-posta<input name="Eposta" type="email" required maxlength="200" value="${esc(k.Eposta)}" ${d ? 'readonly' : ''}></label>
+        <label>Ad soyad<input name="AdSoyad" required maxlength="100" value="${esc(k.AdSoyad)}"></label>
+        <label>Birim<select name="Birim" required><option value="">Seçin</option>${secenek([['YONETIM', 'YONETIM (sistem yönetimi)']].concat(y.birimler.map((b) => [b.BirimID, b.Ad + ' (' + b.BirimID + ')'])), k.Birim)}</select></label>
+        <label>Durum<select name="Aktif">${secenek([['EVET', 'Aktif'], ['HAYIR', 'Pasif (giremez)']], k.Aktif)}</select></label>
+        <div class="tam"><b style="font-size:13px">Roller</b><div>${y.roller.map((r) => `<label style="display:inline-flex;flex-direction:row;gap:6px;align-items:center;margin-right:14px"><input type="checkbox" name="rol" value="${r}" style="width:auto" ${k.Roller.includes(r) ? 'checked' : ''}>${esc(ROL_ETIKET[r] || r)}</label>`).join('')}</div></div>
+        <div class="tam"><b style="font-size:13px">Onayladığı birimler</b> <span class="meta">(yalnızca birim onaycısı için)</span><div>${onayAdaylari.map((b) => `<label style="display:inline-flex;flex-direction:row;gap:6px;align-items:center;margin-right:14px"><input type="checkbox" name="onay" value="${esc(b.BirimID)}" style="width:auto" ${k.OnayBirimleri.includes(b.BirimID) ? 'checked' : ''}>${esc(b.Ad)}</label>`).join('') || '<span class="meta">Önce Birimler bölümünden akademik/idari birim ekleyin.</span>'}</div></div>
+      </div>
+      <div class="eylemler"><button class="btn" type="submit">${d ? 'Kaydet' : 'Ekle ve şifre üret'}</button>${d ? '<button class="btn ikincil" type="button" data-eylem="duzenIptal">Vazgeç</button>' : ''}</div>
+    </form>`;
+    const satirlar = y.kullanicilar.map((u) => `<tr>
+      <td><b>${esc(u.AdSoyad)}</b><div class="meta">${esc(u.Eposta)}</div></td>
+      <td>${esc(birimAdi(u.Birim))}</td>
+      <td>${u.Roller.map((r) => `<span class="rol" style="background:#eef2f7;color:#1f4e8c">${esc(ROL_ETIKET[r] || r)}</span>`).join(' ')}${u.OnayBirimleri.length ? `<div class="meta">Onay: ${esc(u.OnayBirimleri.map(birimAdi).join(', '))}</div>` : ''}</td>
+      <td>${u.Aktif === 'HAYIR' ? '<span class="meta">Pasif</span>' : 'Aktif'}${u.sifreVar ? '' : '<div class="meta" style="color:var(--kotu)">Şifre yok</div>'}${u.kilitli ? '<div class="meta" style="color:var(--kotu)">Kilitli</div>' : ''}</td>
+      <td><button class="btn ikincil" data-eylem="kDuzenle" data-id="${esc(u.Eposta)}">Düzenle</button>
+        <button class="btn ikincil" data-eylem="kSifre" data-id="${esc(u.Eposta)}">Şifre belirle</button></td></tr>`).join('');
+    return `${sifreKutu}${form}<div class="kart tablo-kap"><table>
+      <thead><tr><th>Kullanıcı</th><th>Birim</th><th>Roller</th><th>Durum</th><th></th></tr></thead>
+      <tbody>${satirlar || '<tr><td colspan="5" class="bos">Kayıt yok.</td></tr>'}</tbody></table></div>`;
+  }
+
+  function yMekanlar() {
+    const y = S.yv;
+    const d = duzenKaydi('mekan');
+    const m = d || { MekanID: '', Ad: '', Bina: '', Kapasite: '', SorumluBirim: '', Aktif: 'EVET' };
+    const form = `<form id="f-mekan" class="kart">
+      <h3 style="margin-top:0">${d ? 'Mekânı düzenle' : 'Yeni mekân'}</h3>
+      <div class="izgara">
+        <label>Kod (ör. MUH-KS)<input name="MekanID" required maxlength="30" value="${esc(m.MekanID)}" ${d ? 'readonly' : ''}></label>
+        <label>Ad<input name="Ad" required maxlength="100" value="${esc(m.Ad)}"></label>
+        <label>Bina<input name="Bina" maxlength="100" value="${esc(m.Bina)}"></label>
+        <label>Kapasite (kişi)<input name="Kapasite" type="number" min="1" required value="${esc(m.Kapasite)}"></label>
+        <label>Sorumlu birim<select name="SorumluBirim"><option value="">—</option>${secenek(y.birimler.map((b) => [b.BirimID, b.Ad]), m.SorumluBirim)}</select></label>
+        <label>Durum<select name="Aktif">${secenek([['EVET', 'Aktif'], ['HAYIR', 'Pasif (rezervasyon açılamaz)']], m.Aktif)}</select></label>
+      </div>
+      <div class="eylemler"><button class="btn" type="submit">${d ? 'Kaydet' : 'Ekle'}</button>${d ? '<button class="btn ikincil" type="button" data-eylem="duzenIptal">Vazgeç</button>' : ''}</div>
+    </form>`;
+    const satirlar = y.mekanlar.map((x) => `<tr><td><b>${esc(x.Ad)}</b><div class="meta">${esc(x.MekanID)}</div></td><td>${esc(x.Bina)}</td><td>${esc(x.Kapasite)}</td>
+      <td>${esc(x.SorumluBirim ? birimAdi(x.SorumluBirim) : '')}</td><td>${x.Aktif === 'HAYIR' ? '<span class="meta">Pasif</span>' : 'Aktif'}</td>
+      <td><button class="btn ikincil" data-eylem="mDuzenle" data-id="${esc(x.MekanID)}">Düzenle</button></td></tr>`).join('');
+    return `${form}<div class="kart tablo-kap"><table><thead><tr><th>Mekân</th><th>Bina</th><th>Kapasite</th><th>Sorumlu birim</th><th>Durum</th><th></th></tr></thead>
+      <tbody>${satirlar || '<tr><td colspan="6" class="bos">Henüz mekân yok. Yukarıdan ekleyin.</td></tr>'}</tbody></table></div>`;
+  }
+
+  function yBirimler() {
+    const y = S.yv;
+    const d = duzenKaydi('birim');
+    const b = d || { BirimID: '', Ad: '', Tur: 'AKADEMIK', Eposta: '' };
+    const form = `<form id="f-birim" class="kart">
+      <h3 style="margin-top:0">${d ? 'Birimi düzenle' : 'Yeni birim'}</h3>
+      <div class="izgara">
+        <label>Kod (ör. MUHENDISLIK, Türkçe karaktersiz)<input name="BirimID" required maxlength="40" value="${esc(b.BirimID)}" ${d ? 'readonly' : ''}></label>
+        <label>Ad<input name="Ad" required maxlength="100" value="${esc(b.Ad)}"></label>
+        <label>Tür<select name="Tur">${secenek([['AKADEMIK', 'Akademik'], ['IDARI', 'İdari'], ['HIZMET', 'Hizmet birimi (sabit liste)']], b.Tur)}</select></label>
+        <label>Ortak e-posta (isteğe bağlı)<input name="Eposta" type="email" maxlength="200" value="${esc(b.Eposta)}"></label>
+      </div>
+      <p class="meta">Hizmet birimleri sabittir: ${esc(y.hizmetBirimleri.join(', '))}. Yeni birimler akademik veya idari olarak eklenir.</p>
+      <div class="eylemler"><button class="btn" type="submit">${d ? 'Kaydet' : 'Ekle'}</button>${d ? '<button class="btn ikincil" type="button" data-eylem="duzenIptal">Vazgeç</button>' : ''}</div>
+    </form>`;
+    const tur = { AKADEMIK: 'Akademik', IDARI: 'İdari', HIZMET: 'Hizmet' };
+    const satirlar = y.birimler.map((x) => `<tr><td><b>${esc(x.Ad)}</b><div class="meta">${esc(x.BirimID)}</div></td><td>${esc(tur[x.Tur] || x.Tur)}</td><td>${esc(x.Eposta)}</td>
+      <td><button class="btn ikincil" data-eylem="bDuzenle" data-id="${esc(x.BirimID)}">Düzenle</button></td></tr>`).join('');
+    return `${form}<div class="kart tablo-kap"><table><thead><tr><th>Birim</th><th>Tür</th><th>E-posta</th><th></th></tr></thead><tbody>${satirlar}</tbody></table></div>`;
+  }
+
+  function yAyarlar() {
+    const satirlar = S.yv.ayarlar.map((a) => `<tr><td><b style="font-family:monospace;font-size:13px">${esc(a.Anahtar)}</b><div class="meta">${esc(a.Aciklama)}</div></td>
+      <td><input data-ayar="${esc(a.Anahtar)}" value="${esc(a.Deger)}" style="width:100%"></td>
+      <td><button class="btn ikincil" data-eylem="ayarKaydet" data-id="${esc(a.Anahtar)}">Kaydet</button></td></tr>`).join('');
+    return `<div class="kart tablo-kap"><table><thead><tr><th>Ayar</th><th>Değer</th><th></th></tr></thead><tbody>${satirlar}</tbody></table></div>`;
+  }
+
+  /** Yönetim kaydı gönderir; sonunda hem ana veriyi hem yönetim verisini yeniler. */
+  function yislem(buton, fn) {
+    return islem(buton, async () => {
+      const r = await fn();
+      S.yv = null; S.duzen = null;
+      return r;
+    });
+  }
+
+  function yEtkinlikler() {
     const v = S.v;
     const satirlar = v.tumu.map((e) => {
       const gecis = v.gecisler[e.Durum] || [];
@@ -453,7 +569,7 @@
     }).join('');
     return `
       <div class="ust-arac"><h2>Tüm etkinlikler</h2></div>
-      <div class="uyari-kutu">Yedekteki bir etkinliği öne almak çifte rezervasyona yol açabilir; önce çakışan kaydı iptal edin. Kullanıcı, mekân ve ayar değişiklikleri veri tablosundan yapılır.</div>
+      <div class="uyari-kutu">Yedekteki bir etkinliği öne almak çifte rezervasyona yol açabilir; önce çakışan kaydı iptal edin.</div>
       <div class="kart tablo-kap"><table>
         <thead><tr><th>Etkinlik</th><th>Tarih</th><th>Mekân</th><th>Birim</th><th>Durum</th><th>Elle durum</th></tr></thead>
         <tbody>${satirlar || '<tr><td colspan="6" class="bos">Kayıt yok.</td></tr>'}</tbody>
@@ -474,6 +590,29 @@
     switch (b.dataset.eylem) {
       case 'detayAc': S.acikDetay = id; ciz(); break;
       case 'detayKapat': S.acikDetay = null; ciz(); break;
+      case 'yBolum': S.yBolum = id; S.duzen = null; S.yeniSifre = null; ciz(); break;
+      case 'yYenile': S.yHata = ''; ciz(); break;
+      case 'duzenIptal': S.duzen = null; ciz(); break;
+      case 'sifreKapat': S.yeniSifre = null; ciz(); break;
+      case 'kDuzenle': S.duzen = { tur: 'kullanici', kayit: S.yv.kullanicilar.find((x) => x.Eposta === id) }; ciz(); scrollTo(0, 0); break;
+      case 'mDuzenle': S.duzen = { tur: 'mekan', kayit: S.yv.mekanlar.find((x) => x.MekanID === id) }; ciz(); scrollTo(0, 0); break;
+      case 'bDuzenle': S.duzen = { tur: 'birim', kayit: S.yv.birimler.find((x) => x.BirimID === id) }; ciz(); scrollTo(0, 0); break;
+      case 'kSifre': {
+        const yeni = prompt(id + ' için yeni şifre (en az 8 karakter).\nBoş bırakırsanız rastgele bir şifre üretilir:');
+        if (yeni === null) return;
+        await islem(b, async () => {
+          const r = await cagir('api_sifreBelirle', id, yeni);
+          S.yeniSifre = r.sifre ? { eposta: r.eposta, sifre: r.sifre } : null;
+          S.yv = null;
+          return r;
+        });
+        break;
+      }
+      case 'ayarKaydet': {
+        const deger = $(`[data-ayar="${id}"]`).value;
+        await yislem(b, () => cagir('api_ayarKaydet', id, deger));
+        break;
+      }
       case 'uzat': {
         const gerekce = prompt('Uzatma gerekçesi (ör. EBYS onayı rektörlükte bekliyor):');
         if (!gerekce) return;
@@ -522,6 +661,23 @@
     ev.preventDefault();
     const buton = form.querySelector('button[type="submit"]');
     if (form.id === 'f-yeni') return yeniTalepGonder(form, buton);
+    if (form.id === 'f-kullanici') {
+      const f = new FormData(form);
+      const kayit = { Eposta: f.get('Eposta'), AdSoyad: f.get('AdSoyad'), Birim: f.get('Birim'), Aktif: f.get('Aktif'),
+        Roller: f.getAll('rol'), OnayBirimleri: f.getAll('onay') };
+      return yislem(buton, async () => {
+        const r = await cagir('api_kullaniciKaydet', kayit);
+        if (r.yeni) {
+          const s = await cagir('api_sifreBelirle', r.eposta, '');
+          S.yeniSifre = { eposta: s.eposta, sifre: s.sifre };
+        }
+        return r;
+      });
+    }
+    if (form.id === 'f-mekan' || form.id === 'f-birim') {
+      const kayit = Object.fromEntries(new FormData(form).entries());
+      return yislem(buton, () => cagir(form.id === 'f-mekan' ? 'api_mekanKaydet' : 'api_birimKaydet', kayit));
+    }
     if (form.id === 'f-sifre') {
       if (form.yeni.value !== form.yeni2.value) return toast('Yeni şifreler aynı değil.', true);
       return islem(buton, async () => {

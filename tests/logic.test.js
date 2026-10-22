@@ -146,3 +146,55 @@ test('tüm görevler kabul edilince tamam', () => {
   assert.equal(Logic.tumGorevlerTamamMi([{ Durum: 'KABUL' }, { Durum: 'TAMAMLANDI' }]), true);
   assert.equal(Logic.tumGorevlerTamamMi([{ Durum: 'KABUL' }, { Durum: 'BEKLIYOR' }]), false);
 });
+
+// --- Yönetim ekranı doğrulamaları -------------------------------------------------
+
+test('kullaniciDogrula: normalleştirir ve hataları bulur', () => {
+  const ctx = { birimler: ['MUH', 'BILGI_ISLEM', 'TEKNIK_ISLER'] };
+  let s = Logic.kullaniciDogrula({ Eposta: ' Ayse@Yasar.edu.tr ', AdSoyad: ' Ayşe ', Birim: 'muh', Roller: ['TALEP_EDEN', 'BIRIM_ONAYCI'], OnayBirimleri: ['muh'], Aktif: 'EVET' }, ctx);
+  assert.deepEqual(s.hatalar, []);
+  assert.deepEqual(s.kayit, { Eposta: 'ayse@yasar.edu.tr', AdSoyad: 'Ayşe', Birim: 'MUH', Roller: 'TALEP_EDEN, BIRIM_ONAYCI', OnayBirimleri: 'MUH', Aktif: 'EVET' });
+
+  s = Logic.kullaniciDogrula({ Eposta: 'bozuk', AdSoyad: '', Birim: 'YOK', Roller: ['ADMIN'], Aktif: 'HAYIR' }, ctx);
+  assert.equal(s.hatalar.length, 4);
+  assert.equal(s.kayit.Aktif, 'HAYIR');
+
+  assert.match(Logic.kullaniciDogrula({ Eposta: 'a@b.co', AdSoyad: 'x', Birim: 'MUH', Roller: ['BIRIM_ONAYCI'] }, ctx).hatalar.join(' '), /onay birimi/);
+  assert.match(Logic.kullaniciDogrula({ Eposta: 'a@b.co', AdSoyad: 'x', Birim: 'MUH', Roller: ['HIZMET_BIRIMI'] }, ctx).hatalar.join(' '), /hizmet birimi olmalı/);
+  assert.deepEqual(Logic.kullaniciDogrula({ Eposta: 'a@b.co', AdSoyad: 'x', Birim: 'BILGI_ISLEM', Roller: 'HIZMET_BIRIMI' }, ctx).hatalar, []);
+  assert.deepEqual(Logic.kullaniciDogrula({ Eposta: 'a@b.co', AdSoyad: 'x', Birim: 'YONETIM', Roller: ['YONETICI'] }, ctx).hatalar, []);
+  assert.match(Logic.kullaniciDogrula({ Eposta: 'a@b.co', AdSoyad: 'x', Birim: 'MUH', Roller: [] }, ctx).hatalar.join(' '), /rol/);
+});
+
+test('mekanDogrula ve birimDogrula', () => {
+  const ctx = { birimler: ['TEKNIK_ISLER'] };
+  let s = Logic.mekanDogrula({ MekanID: 'muh-ks', Ad: 'Konferans', Bina: 'A', Kapasite: '250', SorumluBirim: 'teknik_isler' }, ctx);
+  assert.deepEqual(s.hatalar, []);
+  assert.deepEqual(s.kayit, { MekanID: 'MUH-KS', Ad: 'Konferans', Bina: 'A', Kapasite: '250', SorumluBirim: 'TEKNIK_ISLER', Aktif: 'EVET' });
+  assert.ok(Logic.mekanDogrula({ MekanID: 'ş', Ad: '', Kapasite: '0' }, ctx).hatalar.length >= 3);
+  assert.ok(Logic.mekanDogrula({ MekanID: 'KS', Ad: 'x', Kapasite: '12.5' }, ctx).hatalar.length === 1);
+  assert.match(Logic.mekanDogrula({ MekanID: 'KS', Ad: 'x', Kapasite: '5', SorumluBirim: 'YOK' }, ctx).hatalar[0], /Tanımsız/);
+
+  assert.deepEqual(Logic.birimDogrula({ BirimID: 'muhendislik', Ad: 'Mühendislik', Tur: 'akademik' }).hatalar, []);
+  assert.match(Logic.birimDogrula({ BirimID: 'YENI_HIZMET', Ad: 'x', Tur: 'HIZMET' }).hatalar.join(' '), /sabittir/);
+  assert.deepEqual(Logic.birimDogrula({ BirimID: 'GUVENLIK', Ad: 'Güvenlik', Tur: 'HIZMET' }).hatalar, []);
+  assert.match(Logic.birimDogrula({ BirimID: 'GUVENLIK', Ad: 'Güvenlik', Tur: 'IDARI' }).hatalar.join(' '), /HIZMET olmalı/);
+  assert.ok(Logic.birimDogrula({ BirimID: 'Müh', Ad: 'x', Tur: 'IDARI' }).hatalar.length >= 1);
+  assert.ok(Logic.birimDogrula({ BirimID: 'MUH', Ad: 'x', Tur: 'DIGER' }).hatalar.length >= 1);
+});
+
+test('ayarDogrula', () => {
+  const anahtarlar = ['ON_REZ_SURE_GUN', 'BILDIRIM_AKTIF', 'EBYS_NO_REGEX', 'RESMI_TATILLER', 'EBYS_PDF_MAX_MB', 'UYGULAMA_URL'];
+  assert.deepEqual(Logic.ayarDogrula('ON_REZ_SURE_GUN', ' 12 ', anahtarlar), { hatalar: [], kayit: { Anahtar: 'ON_REZ_SURE_GUN', Deger: '12' } });
+  assert.equal(Logic.ayarDogrula('ON_REZ_SURE_GUN', '0', anahtarlar).hatalar.length, 1);
+  assert.equal(Logic.ayarDogrula('ON_REZ_SURE_GUN', 'abc', anahtarlar).hatalar.length, 1);
+  assert.equal(Logic.ayarDogrula('EBYS_PDF_MAX_MB', '10', anahtarlar).hatalar.length, 1, 'Vercel sınırı: en fazla 3 MB');
+  assert.equal(Logic.ayarDogrula('BILDIRIM_AKTIF', 'belki', anahtarlar).hatalar.length, 1);
+  assert.equal(Logic.ayarDogrula('EBYS_NO_REGEX', '([', anahtarlar).hatalar.length, 1);
+  assert.equal(Logic.ayarDogrula('EBYS_NO_REGEX', '^E-\\d{8}$', anahtarlar).hatalar.length, 0);
+  assert.equal(Logic.ayarDogrula('RESMI_TATILLER', '2026-10-29, 2026-13-45', anahtarlar).hatalar.length, 1);
+  assert.equal(Logic.ayarDogrula('RESMI_TATILLER', '2026-10-29, 2026-11-10', anahtarlar).kayit.Deger, '2026-10-29,2026-11-10');
+  assert.equal(Logic.ayarDogrula('UYGULAMA_URL', 'ftp://x', anahtarlar).hatalar.length, 1);
+  assert.equal(Logic.ayarDogrula('UYGULAMA_URL', '', anahtarlar).hatalar.length, 0);
+  assert.match(Logic.ayarDogrula('BILINMEYEN', 'x', anahtarlar).hatalar[0], /Tanımsız/);
+});

@@ -35,27 +35,43 @@ Vercel > Settings > Environment Variables bölümüne ([.env.example](../.env.ex
 | `OTURUM_SIRRI` | `openssl rand -hex 32` çıktısı |
 | `CRON_SECRET` | `openssl rand -hex 32` çıktısı (gece görevini korur) |
 | `UYGULAMA_URL` | Canlı adres, ör. `https://etkinlik-yasar.vercel.app` |
+| `KURULUM_ANAHTARI` | Üçüncü bir rastgele dizi, en az 16 karakter (`/kurulum` sayfasını korur) |
 | `RESEND_API_KEY`, `EPOSTA_GONDEREN` | b adımından (isteğe bağlı) |
 
-Değişkenleri ekledikten sonra projeyi yeniden dağıtın (**Deployments > Redeploy**).
+Veritabanı adresi (`DATABASE_URL`) Neon'u projeye bağlayınca zaten eklenmiş olur.
 
-### d) Tabloları kurma ve ilk yönetici
+### d) Tabloları kurma ve ilk yönetici (tarayıcıdan)
 
-Vercel > Storage > Neon > **.env.local** sekmesinden `DATABASE_URL` değerini kopyalayıp kendi bilgisayarınızda:
+1. Projeyi yeniden dağıtın (**Deployments > … > Redeploy**) ki değişkenler devreye girsin.
+2. Tarayıcıda `https://<proje-adresiniz>/kurulum` adresini açın.
+3. **Kurulum anahtarı** kutusuna `KURULUM_ANAHTARI` değerini, **e-posta** kutusuna kendi e-postanızı yazın. Deneme için örnek mekân isterseniz kutuyu işaretleyin. **Kurulumu çalıştır** deyin.
+4. Ekranda ilk yönetici şifresi **bir kez** görünür. Not alın, `/giris` sayfasından girin ve **Hesabım** sekmesinden değiştirin.
+
+Kurulum tekrar çalıştırılabilir; var olan veriye dokunmaz. Yeni sürümde veritabanına sütun eklendiyse aynı sayfayı yeniden çalıştırmak yeter.
+
+### e) Veriyi girme (Yönetim sekmesi)
+
+Yönetici olarak girince **Yönetim** sekmesinde şu bölümler vardır:
+
+- **Birimler:** fakülte, enstitü, idari birimler. (Hizmet birimleri hazır gelir.)
+- **Mekânlar:** salonlar ve kapasiteleri.
+- **Kullanıcılar:** e-posta, ad, birim, roller. Yeni kullanıcı eklenince rastgele şifresi ekranda bir kez gösterilir; kişiye ayrıca iletin. **Şifre belirle** düğmesiyle şifresi unutulanlara yenisi verilir (kilitli hesabın kilidi de açılır).
+- **Ayarlar:** süreler, `EBYS_NO_REGEX`, `RESMI_TATILLER`, bildirimler.
+
+Çok sayıda kullanıcıyı tek seferde yüklemek için komut satırı yolu da vardır (isteğe bağlı, aşağıda).
+
+### Komut satırı (isteğe bağlı)
+
+Node.js 22+ kurulu bir bilgisayarda, Neon'daki `DATABASE_URL` değeriyle:
 
 ```bash
-DATABASE_URL="postgres://..." ILK_YONETICI_EPOSTA="siz@yasar.edu.tr" npm run kurulum
+DATABASE_URL="postgres://..." npm run kurulum                 # tabloları kurar (ILK_YONETICI_EPOSTA ile ilk yönetici)
+DATABASE_URL="postgres://..." npm run aktar -- data           # CSV'lerden toplu yükleme (kullanicilar.csv, mekanlar.csv, birimler.csv)
+DATABASE_URL="postgres://..." npm run sifre -- --hepsi        # şifresi olmayan herkese rastgele şifre üretir ve listeler
+DATABASE_URL="postgres://..." npm run sifre -- ornek@yasar.edu.tr   # tek kullanıcıya rastgele şifre
 ```
 
-Bu komut tabloları, varsayılan ayarları, hizmet birimlerini ve ilk yöneticiyi oluşturur ve **ilk yöneticinin rastgele şifresini bir kez ekrana yazar** (not alın; girişte Hesabım sekmesinden değiştirin). Tekrar çalıştırmak güvenlidir.
-
-### e) Veriyi girme
-
-- **Kullanıcılar:** `/kullanici-ekle` komutuyla `data/kullanicilar.csv` hazırlanır, sonra `DATABASE_URL="..." npm run aktar -- data`. (Dosya adları tablo adıdır: `kullanicilar.csv`, `mekanlar.csv`, `birimler.csv`; var olan kayıtlar atlanır.)
-- **Şifreler:** `DATABASE_URL="..." npm run sifre -- --hepsi` şifresi olmayan her kullanıcıya rastgele şifre üretir ve listeler (bir kez gösterilir; her kişiye kendi şifresini ayrıca iletin). Tek kişi için: `npm run sifre -- ornek@yasar.edu.tr` (rastgele şifre yazar) veya `npm run sifre -- ornek@yasar.edu.tr YeniSifre123`. Unutulan şifre de aynı komutla yeniden belirlenir; kilitli hesabın kilidi de açılır.
-- **Mekânlar ve birimler:** aynı şekilde `mekanlar.csv`, `birimler.csv`.
-- **Ayarlar** (ör. `EBYS_NO_REGEX`, `RESMI_TATILLER`): Neon panelindeki **SQL Editor**'de, ör. `UPDATE "Ayarlar" SET "Deger" = '...' WHERE "Anahtar" = 'RESMI_TATILLER';`
-- Tek kayıt düzeltmeleri de aynı SQL editöründen yapılır. (İleride yönetim ekranı eklenebilir.)
+`/kullanici-ekle` komutu üniversiteden gelen listeyi `data/kullanicilar.csv` biçimine çevirip denetler.
 
 ## Gece görevi
 

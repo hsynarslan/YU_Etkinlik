@@ -10,6 +10,7 @@ Kampüste yapılacak etkinliklerin talep → EBYS onayı → hizmet birimi hazı
 - **Veri tabanı:** PostgreSQL (canlıda Neon; yerelde ve testlerde PGlite = bellekte/diskte gerçek PostgreSQL)
 - **Arayüz:** Tek sayfa, vanilla JS (`sunucu/arayuz/`)
 - **Giriş:** E-posta + şifre; kullanıcıları ve şifreleri yönetici tanımlar (`npm run sifre`), 5 hatalı denemede 15 dk kilit; yerelde şifresiz geliştirme girişi
+- **İlk kurulum:** `/kurulum` sayfası (KURULUM_ANAHTARI ile): tablolar + ilk yönetici; sonra Yönetim sekmesi
 - **Zamanlanmış iş:** Vercel Cron → `/api/cron/gunluk` (her gece 02:00 İstanbul)
 - **Dil:** Kod tanımlayıcıları, arayüz ve dokümanlar Türkçe (ASCII tanımlayıcı: `Etkinlik`, `onayBirimleri`)
 
@@ -51,6 +52,7 @@ sunucu/
   oturum.js       İmzalı oturum çerezi, geliştirme girişi
   sifre.js        Şifre özetleme (scrypt), girişYap (kilitli), şifre belirleme
   hesap.js        api_sifreDegistir
+  yonetim.js      Yönetim sekmesi API'leri (kullanıcı, mekân, birim, ayar, şifre belirleme); yalnızca YONETICI
   bildirim.js     E-posta (Resend; anahtar yoksa günlüğe yazar; BILDIRIM_AKTIF=HAYIR ise sessiz)
   rezervasyon.js  Ön rezervasyon, uzatma, iptal, yedek terfisi, gunlukSureKontrolu
   ebys.js         EBYS no + PDF (Dosyalar tablosu), onaycı kararı, muaf etkinliğe sonradan EBYS bağlama
@@ -82,7 +84,7 @@ data/             *.ornek.csv (gerçek listeler .gitignore'da)
 
 ## Bilinen sınırlar
 
-- Bu sürümde mekân/kullanıcı/ayar düzenleme ekranı yok; CSV (`npm run aktar`) veya Neon SQL editörü kullanılır. Yönetim ekranı yol haritasında.
+- Yönetim sekmesinde mekân/birim/kullanıcı/ayar eklenir ve düzenlenir ama silinmez (kayıtlar pasif yapılır).
 - `api_baslangic` her çağrıda tüm tabloları okur; yılda birkaç bin etkinlik için yeterli, yavaşlarsa önce burada filtre/önbellek düşünün.
 - EBYS ile doğrudan entegrasyon yok; kontrol PDF + onaycıyla yapılır.
 - Vercel Hobby planı ticari olmayan kullanım içindir; Cron günde bir kez ve saat içinde herhangi bir dakikada çalışır.
@@ -101,6 +103,5 @@ data/             *.ornek.csv (gerçek listeler .gitignore'da)
 1. Pilot: bir fakülte + hizmet birimleriyle 1–2 ay
 2. Etkinlik sonrası değerlendirme formu (katılım sayısı, fotoğraflar, sorunlar)
 3. Raporlama: birim/mekân/ay bazında etkinlik sayıları (ayrı bir rapor sayfası veya Looker Studio)
-4. Yönetim ekranı (mekân, kullanıcı, ayar düzenleme)
-5. Google Takvim'e kesinleşen etkinlikleri yazma (salon takvimleri)
-6. Herkese açık kampüs etkinlik takvimi sayfası
+4. Google Takvim'e kesinleşen etkinlikleri yazma (salon takvimleri)
+5. Herkese açık kampüs etkinlik takvimi sayfası

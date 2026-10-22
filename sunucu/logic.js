@@ -400,6 +400,108 @@ var Logic = (function () {
     });
   }
 
+  // ---------------------------------------------------------------------------
+  // Yönetim ekranı doğrulamaları (kullanıcı, mekân, birim, ayar)
+  // Hepsi { hatalar: [...], kayit: {...} } döndürür; kayit düzeltilmiş (büyük/küçük harf, liste) hâlidir.
+  // ---------------------------------------------------------------------------
+
+  var EPOSTA_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  var BIRIM_TURLERI = ['AKADEMIK', 'IDARI', 'HIZMET'];
+
+  function metin(v) { return String(v == null ? '' : v).trim(); }
+  function listeye(v) {
+    return Array.isArray(v) ? v.map(function (x) { return metin(x).toUpperCase(); }).filter(Boolean) : listeAyristir(v);
+  }
+  function evetHayir(v) { return String(v).toUpperCase() === 'HAYIR' ? 'HAYIR' : 'EVET'; }
+
+  /** ctx: { birimler: [BirimID, ...] } */
+  function kullaniciDogrula(k, ctx) {
+    k = k || {};
+    var birimler = (ctx && ctx.birimler) || [];
+    var h = [];
+    var eposta = metin(k.Eposta).toLowerCase();
+    if (!EPOSTA_RE.test(eposta)) h.push('Geçerli bir e-posta girin.');
+    var ad = metin(k.AdSoyad);
+    if (!ad) h.push('Ad soyad zorunludur.');
+    if (ad.length > 100) h.push('Ad soyad en fazla 100 karakter olabilir.');
+    var birim = metin(k.Birim).toUpperCase();
+    if (!birim) h.push('Birim seçin.');
+    else if (birim !== 'YONETIM' && birimler.indexOf(birim) === -1) h.push('Tanımsız birim: ' + birim);
+    var roller = listeye(k.Roller);
+    var gecerliRoller = Object.keys(ROLLER);
+    roller.forEach(function (r) { if (gecerliRoller.indexOf(r) === -1) h.push('Tanımsız rol: ' + r); });
+    if (!roller.length) h.push('En az bir rol seçin.');
+    var onay = listeye(k.OnayBirimleri);
+    onay.forEach(function (b) { if (birimler.indexOf(b) === -1) h.push('Tanımsız onay birimi: ' + b); });
+    if (roller.indexOf(ROLLER.BIRIM_ONAYCI) !== -1 && !onay.length) h.push('Birim onaycısı için en az bir onay birimi seçin.');
+    if (roller.indexOf(ROLLER.HIZMET_BIRIMI) !== -1 && !HIZMET_BIRIMLERI[birim]) h.push('Hizmet birimi rolü için birim bir hizmet birimi olmalıdır.');
+    return { hatalar: h, kayit: { Eposta: eposta, AdSoyad: ad, Birim: birim, Roller: roller.join(', '), OnayBirimleri: onay.join(', '), Aktif: evetHayir(k.Aktif) } };
+  }
+
+  function mekanDogrula(m, ctx) {
+    m = m || {};
+    var birimler = (ctx && ctx.birimler) || [];
+    var h = [];
+    var id = metin(m.MekanID).toUpperCase();
+    if (!/^[A-Z0-9][A-Z0-9_-]{1,29}$/.test(id)) h.push('Mekân kodu 2-30 karakter olmalı; yalnızca harf, rakam, - ve _ kullanın (Türkçe karakter olmadan).');
+    var ad = metin(m.Ad);
+    if (!ad) h.push('Mekân adı zorunludur.');
+    if (ad.length > 100) h.push('Mekân adı en fazla 100 karakter olabilir.');
+    var bina = metin(m.Bina);
+    if (bina.length > 100) h.push('Bina en fazla 100 karakter olabilir.');
+    var kap = metin(m.Kapasite);
+    if (!/^\d+$/.test(kap) || Number(kap) < 1 || Number(kap) > 100000) h.push('Kapasite 1 ile 100000 arasında bir tam sayı olmalıdır.');
+    var sorumlu = metin(m.SorumluBirim).toUpperCase();
+    if (sorumlu && birimler.indexOf(sorumlu) === -1) h.push('Tanımsız sorumlu birim: ' + sorumlu);
+    return { hatalar: h, kayit: { MekanID: id, Ad: ad, Bina: bina, Kapasite: kap, SorumluBirim: sorumlu, Aktif: evetHayir(m.Aktif) } };
+  }
+
+  function birimDogrula(b) {
+    b = b || {};
+    var h = [];
+    var id = metin(b.BirimID).toUpperCase();
+    if (!/^[A-Z][A-Z0-9_]{1,39}$/.test(id)) h.push('Birim kodu 2-40 karakter olmalı, harfle başlamalı; yalnızca büyük harf, rakam ve _ kullanın (Türkçe karakter olmadan).');
+    var ad = metin(b.Ad);
+    if (!ad) h.push('Birim adı zorunludur.');
+    if (ad.length > 100) h.push('Birim adı en fazla 100 karakter olabilir.');
+    var tur = metin(b.Tur).toUpperCase();
+    if (BIRIM_TURLERI.indexOf(tur) === -1) h.push('Tür AKADEMIK, IDARI veya HIZMET olmalıdır.');
+    if (tur === 'HIZMET' && !HIZMET_BIRIMLERI[id]) h.push('Hizmet birimleri sabittir (' + Object.keys(HIZMET_BIRIMLERI).join(', ') + '); yenisi eklenemez.');
+    if (tur !== 'HIZMET' && HIZMET_BIRIMLERI[id]) h.push(id + ' bir hizmet birimi kodudur; türü HIZMET olmalıdır.');
+    var eposta = metin(b.Eposta).toLowerCase();
+    if (eposta && !EPOSTA_RE.test(eposta)) h.push('Birim e-postası geçerli değil.');
+    return { hatalar: h, kayit: { BirimID: id, Ad: ad, Tur: tur, Eposta: eposta } };
+  }
+
+  var AYAR_SAYI_ARALIK = {
+    ON_REZ_SURE_GUN: [1, 60], UZATMA_GUN: [1, 60], MAX_UZATMA: [0, 10],
+    ASGARI_BASVURU_GUN: [0, 365], ASGARI_BASVURU_UST_DUZEY_GUN: [0, 365],
+    HATIRLATMA_GUN: [0, 30], EBYS_PDF_MAX_MB: [1, 3]
+  };
+
+  /** anahtarlar: bilinen ayar anahtarları dizisi. */
+  function ayarDogrula(anahtar, deger, anahtarlar) {
+    var h = [];
+    anahtar = metin(anahtar);
+    deger = metin(deger);
+    if ((anahtarlar || []).indexOf(anahtar) === -1) return { hatalar: ['Tanımsız ayar: ' + anahtar], kayit: null };
+    if (AYAR_SAYI_ARALIK[anahtar]) {
+      var a = AYAR_SAYI_ARALIK[anahtar];
+      if (!/^\d+$/.test(deger) || Number(deger) < a[0] || Number(deger) > a[1]) h.push(anahtar + ' ' + a[0] + ' ile ' + a[1] + ' arasında bir tam sayı olmalıdır.');
+    } else if (anahtar === 'BILDIRIM_AKTIF') {
+      if (deger !== 'EVET' && deger !== 'HAYIR') h.push('BILDIRIM_AKTIF EVET veya HAYIR olmalıdır.');
+    } else if (anahtar === 'EBYS_NO_REGEX') {
+      try { new RegExp(deger); } catch (e) { h.push('EBYS numarası düzenli ifadesi geçersiz.'); }
+      if (!deger) h.push('EBYS numarası düzenli ifadesi boş olamaz.');
+    } else if (anahtar === 'RESMI_TATILLER') {
+      listeAyristir(deger).forEach(function (t) { if (!tarihGecerliMi(t)) h.push('Geçersiz tatil tarihi: ' + t + ' (YYYY-AA-GG olmalı).'); });
+      deger = listeAyristir(deger).join(',');
+    } else if (anahtar === 'UYGULAMA_URL') {
+      if (deger && !/^https?:\/\/[^\s]+$/.test(deger)) h.push('Adres http:// veya https:// ile başlamalıdır.');
+    }
+    return { hatalar: h, kayit: { Anahtar: anahtar, Deger: deger } };
+  }
+
   return {
     DURUM: DURUM,
     DURUM_ETIKET: DURUM_ETIKET,
@@ -427,7 +529,11 @@ var Logic = (function () {
     ebysNoGecerliMi: ebysNoGecerliMi,
     onRezervasyonDogrula: onRezervasyonDogrula,
     gorevleriOlustur: gorevleriOlustur,
-    tumGorevlerTamamMi: tumGorevlerTamamMi
+    tumGorevlerTamamMi: tumGorevlerTamamMi,
+    kullaniciDogrula: kullaniciDogrula,
+    mekanDogrula: mekanDogrula,
+    birimDogrula: birimDogrula,
+    ayarDogrula: ayarDogrula
   };
 })();
 

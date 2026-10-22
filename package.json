@@ -3,20 +3,28 @@
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
-  "description": "Yaşar Üniversitesi Etkinlik Yönetim Sistemi — Google Apps Script + Google Sheets",
+  "description": "Yaşar Üniversitesi Etkinlik Yönetim Sistemi — Node.js (Express) + PostgreSQL, Vercel",
   "scripts": {
     "test": "node --test \"tests/**/*.test.js\"",
     "kontrol": "node tools/kontrol.js",
     "dogrula": "npm test && npm run kontrol",
+    "dev": "node sunucu/yerel.js",
+    "kurulum": "node sunucu/komut.js kurulum",
+    "ornek-veri": "node sunucu/komut.js ornek-veri",
+    "gece-gorevi": "node sunucu/komut.js gece-gorevi",
+    "aktar": "node sunucu/komut.js aktar",
     "onizleme": "node tools/onizleme.js",
-    "kullanici-kontrol": "node tools/kullanici-kontrol.js",
-    "push": "npm run dogrula && clasp push",
-    "ac": "clasp open-script"
-  },
-  "devDependencies": {
-    "@google/clasp": "^3.4.1"
+    "kullanici-kontrol": "node tools/kullanici-kontrol.js"
   },
   "engines": {
     "node": ">=22"
-  }
+  },
+  "dependencies": {
+    "express": "^4.22.3",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.11"
+  },
+  "main": "sunucu/uygulama.js"
 }

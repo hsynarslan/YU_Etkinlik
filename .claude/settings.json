@@ -6,18 +6,16 @@
       "Bash(npm run kontrol)",
       "Bash(npm run dogrula)",
       "Bash(npm run onizleme)",
+      "Bash(npm run dev)",
       "Bash(npm run kullanici-kontrol:*)",
-      "Bash(node --test:*)",
-      "Bash(npx clasp status)",
-      "Bash(npx clasp show-file-status)",
-      "Bash(npx clasp list-deployments)"
+      "Bash(node --test:*)"
     ],
     "ask": [
-      "Bash(npx clasp push:*)",
-      "Bash(npm run push)",
-      "Bash(npx clasp create-deployment:*)",
-      "Bash(npx clasp update-deployment:*)",
-      "Bash(npx clasp run-function:*)"
+      "Bash(npm run kurulum)",
+      "Bash(npm run aktar:*)",
+      "Bash(npm run gece-gorevi)",
+      "Bash(npm run ornek-veri)",
+      "Bash(npx vercel:*)"
     ]
   }
 }

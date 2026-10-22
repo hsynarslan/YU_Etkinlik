@@ -1,9 +1,10 @@
 <!DOCTYPE html>
 <html lang="tr">
   <head>
-    <base target="_top">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Etkinlik Yönetim Sistemi</title>
     <meta charset="utf-8">
-    <?!= include_('Styles') ?>
+    {{STIL}}
   </head>
   <body>
     <header class="ust">
@@ -18,6 +19,6 @@
       <p class="bos">Yükleniyor…</p>
     </main>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <?!= include_('App') ?>
+    {{UYGULAMA}}
   </body>
 </html>

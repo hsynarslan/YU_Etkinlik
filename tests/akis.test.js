@@ -1,229 +1,258 @@
-// Sunucu kodunun uçtan uca akış testi (sahte Google servisleriyle). Çalıştırma: npm test
+// Sunucu kodunun uçtan uca akış testi (bellekte PostgreSQL ile). Çalıştırma: npm test
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { yukle } = require('./gas-mock');
+const { ortam, talep, PDF } = require('./ortam');
+const { dosyaGetir } = require('../sunucu/ebys');
 
-const PDF = { ad: 'onay.pdf', mimeType: 'application/pdf', base64: Buffer.from('%PDF-1.4 deneme').toString('base64') };
-
-function ortam() {
-  const g = yukle();
-  const c = g.ctx;
-  g.oturum.eposta = 'kurucu@yasar.edu.tr'; // kurulum editörden, script sahibi tarafından çalıştırılır
-  c.kurulum();
-  const kullanicilar = [
-    ['talep@yasar.edu.tr', 'Ayşe Talep', 'MUH', 'TALEP_EDEN', ''],
-    ['talep2@yasar.edu.tr', 'Can Talep', 'IIBF', 'TALEP_EDEN', ''],
-    ['onay@yasar.edu.tr', 'Oya Onay', 'MUH', 'BIRIM_ONAYCI', 'MUH'],
-    ['bi@yasar.edu.tr', 'Bilgi İşlem', 'BILGI_ISLEM', 'HIZMET_BIRIMI', ''],
-    ['ki@yasar.edu.tr', 'Kurumsal İletişim', 'KURUMSAL_ILETISIM', 'HIZMET_BIRIMI', ''],
-    ['gs@yasar.edu.tr', 'Genel Sekreterlik', 'GENEL_SEKRETERLIK', 'EBYS_MUAF', '']
-  ];
-  kullanicilar.forEach(([Eposta, AdSoyad, Birim, Roller, OnayBirimleri]) =>
-    c.db_ekle_('Kullanicilar', { Eposta, AdSoyad, Birim, Roller, OnayBirimleri, Aktif: 'EVET' }));
-  c.db_ekle_('Mekanlar', { MekanID: 'KS', Ad: 'Konferans Salonu', Bina: 'A', Kapasite: '200', SorumluBirim: 'TEKNIK_ISLER', Aktif: 'EVET' });
-  const bugun = c.bugun_();
-  const ileri = c.Logic.isGunuEkle(bugun, 15);
-  const giris = (eposta) => { g.oturum.eposta = eposta; };
-  const etkinlik = (id) => c.db_bul_('Etkinlikler', 'EtkinlikID', id);
-  return { g, c, bugun, ileri, giris, etkinlik };
-}
-
-function talep(ileri, ek) {
-  return Object.assign({ ad: 'Kariyer Günü', tur: 'Panel', mekanId: 'KS', tarih: ileri,
-    baslangic: '10:00', bitis: '12:00', katilimciSayisi: '120', protokolDuzeyi: 'STANDART' }, ek);
-}
-
-test('kurulum sayfaları, ayarları ve ilk yöneticiyi hazırlar', () => {
-  const { c, g } = ortam();
-  const sayfalar = g.tablo().getSheets().map((s) => s.getName());
-  ['Etkinlikler', 'Mekanlar', 'Birimler', 'Kullanicilar', 'Gorevler', 'Log', 'Ayarlar'].forEach((s) => assert.ok(sayfalar.includes(s), s));
-  assert.ok(!sayfalar.includes('Sheet1'));
-  assert.equal(c.ayar_('ON_REZ_SURE_GUN'), '10');
-  assert.equal(c.ayar_('EBYS_PDF_KLASOR_ID'), 'KLASOR1');
-  assert.equal(c.kullaniciBul_('kurucu@yasar.edu.tr').roller[0], 'YONETICI');
-  assert.equal(c.db_hepsi_('Birimler').length, 6);
-  c.kurulum(); // ikinci kez çalıştırmak güvenli olmalı
-  assert.equal(c.db_hepsi_('Birimler').length, 6);
-  assert.equal(c.db_hepsi_('Ayarlar').length, c.VARSAYILAN_AYARLAR.length);
+test('kurulum tabloları, ayarları ve ilk yöneticiyi hazırlar; tekrar çalıştırmak güvenli', async () => {
+  const { db, kapat } = await ortam();
+  try {
+    const { HEADERS, VARSAYILAN_AYARLAR } = require('../sunucu/config');
+    for (const tablo of Object.keys(HEADERS)) await db.hepsi(tablo); // hepsi var
+    assert.equal((await db.ayar('ON_REZ_SURE_GUN')), '10');
+    const { kullaniciBul } = require('../sunucu/auth');
+    assert.equal((await kullaniciBul('kurucu@yasar.edu.tr')).roller[0], 'YONETICI');
+    assert.equal((await db.hepsi('Birimler')).length, 6);
+    await require('../sunucu/kurulum').kurulum({ yonetici: 'baska@yasar.edu.tr' });
+    assert.equal((await db.hepsi('Birimler')).length, 6);
+    assert.equal((await db.hepsi('Ayarlar')).length, VARSAYILAN_AYARLAR.length);
+    assert.equal((await db.hepsi('Kullanicilar')).length, 7, 'ikinci kurulum yeni yönetici eklememeli');
+  } finally { await kapat(); }
 });
 
-test('tam akış: ön rezervasyon → EBYS → iade → onay → detay → görevler → kesinleşme → iptal ve yedek terfisi', () => {
-  const { c, g, ileri, giris, etkinlik } = ortam();
+test('tam akış: ön rezervasyon → EBYS → iade → onay → detay → görevler → kesinleşme → iptal ve yedek terfisi', async () => {
+  const { c, db, ileri, giris, etkinlik, postalar, kapat } = await ortam();
+  try {
+    giris('talep@yasar.edu.tr');
+    let r = await c.api_onRezervasyonOlustur(talep(ileri));
+    assert.equal(r.ok, true, r.mesaj);
+    const id = r.etkinlik.EtkinlikID;
+    assert.equal((await etkinlik(id)).Durum, 'ON_REZERVASYON');
+    assert.ok((await etkinlik(id)).OnRezBitis > db.bugun());
 
-  giris('talep@yasar.edu.tr');
-  let r = c.api_onRezervasyonOlustur(talep(ileri));
-  assert.equal(r.ok, true, r.mesaj);
-  const id = r.etkinlik.EtkinlikID;
-  assert.equal(etkinlik(id).Durum, 'ON_REZERVASYON');
-  assert.ok(etkinlik(id).OnRezBitis > c.bugun_());
+    // Başka birim aynı saate talep açar → önce çakışma uyarısı, sonra yedek
+    giris('talep2@yasar.edu.tr');
+    r = await c.api_onRezervasyonOlustur(talep(ileri, { ad: 'Girişimcilik Paneli', baslangic: '11:00', bitis: '13:00' }));
+    assert.equal(r.cakisma, true);
+    assert.equal(r.cakisanlar[0].Ad, 'Kariyer Günü');
+    r = await c.api_onRezervasyonOlustur(talep(ileri, { ad: 'Girişimcilik Paneli', baslangic: '11:00', bitis: '13:00', yedegeAl: true }));
+    const yedekId = r.etkinlik.EtkinlikID;
+    assert.equal((await etkinlik(yedekId)).Durum, 'YEDEK');
 
-  // Başka birim aynı saate talep açar → önce çakışma uyarısı, sonra yedek
-  giris('talep2@yasar.edu.tr');
-  r = c.api_onRezervasyonOlustur(talep(ileri, { ad: 'Girişimcilik Paneli', baslangic: '11:00', bitis: '13:00' }));
-  assert.equal(r.cakisma, true);
-  assert.equal(r.cakisanlar[0].Ad, 'Kariyer Günü');
-  r = c.api_onRezervasyonOlustur(talep(ileri, { ad: 'Girişimcilik Paneli', baslangic: '11:00', bitis: '13:00', yedegeAl: true }));
-  const yedekId = r.etkinlik.EtkinlikID;
-  assert.equal(etkinlik(yedekId).Durum, 'YEDEK');
+    // Sahibi olmayan EBYS giremez
+    r = await c.api_ebysGonder(id, { ebysNo: 'E-123456', ebysTarih: db.bugun(), dosya: PDF });
+    assert.equal(r.ok, false);
 
-  // Sahibi olmayan EBYS giremez
-  r = c.api_ebysGonder(id, { ebysNo: 'E-123456', ebysTarih: c.bugun_(), dosya: PDF });
-  assert.equal(r.ok, false);
+    giris('talep@yasar.edu.tr');
+    r = await c.api_ebysGonder(id, { ebysNo: 'E-123456', ebysTarih: db.bugun() });
+    assert.equal(r.ok, false);
+    assert.match(r.mesaj, /PDF/);
+    r = await c.api_ebysGonder(id, { ebysNo: 'E-123456', ebysTarih: db.bugun(), dosya: PDF });
+    assert.equal(r.ok, true, r.mesaj);
+    assert.equal((await etkinlik(id)).Durum, 'EBYS_KONTROL');
+    assert.equal((await db.sorgu('SELECT count(*)::int AS n FROM "Dosyalar"')).rows[0].n, 1);
+    assert.ok(postalar.some((m) => m.to.includes('onay@yasar.edu.tr')), 'onaycıya e-posta gitmeli');
 
-  giris('talep@yasar.edu.tr');
-  r = c.api_ebysGonder(id, { ebysNo: 'E-123456', ebysTarih: c.bugun_() });
-  assert.equal(r.ok, false);
-  assert.match(r.mesaj, /PDF/);
-  r = c.api_ebysGonder(id, { ebysNo: 'E-123456', ebysTarih: c.bugun_(), dosya: PDF });
-  assert.equal(r.ok, true, r.mesaj);
-  assert.equal(etkinlik(id).Durum, 'EBYS_KONTROL');
-  assert.equal(g.dosyalar.length, 1);
-  assert.ok(g.gonderilenler.some((m) => m.to.includes('onay@yasar.edu.tr')), 'onaycıya e-posta gitmeli');
+    // Başka birimin kullanıcısı karar veremez; MUH onaycısı verir; iade notsuz olmaz
+    giris('talep2@yasar.edu.tr');
+    assert.equal((await c.api_ebysKarar(id, true, '')).ok, false);
+    giris('onay@yasar.edu.tr');
+    assert.equal((await c.api_baslangic()).onayBekleyenler.length, 1);
+    assert.equal((await c.api_ebysKarar(id, false, '')).ok, false);
+    assert.equal((await c.api_ebysKarar(id, false, 'Onay tarihi hatalı')).ok, true);
+    assert.equal((await etkinlik(id)).Durum, 'ON_REZERVASYON');
+    assert.equal((await etkinlik(id)).KontrolNotu, 'Onay tarihi hatalı');
 
-  // Başka birimin onaycısı değil, MUH onaycısı karar verir; iade notsuz olmaz
-  giris('talep2@yasar.edu.tr');
-  assert.equal(c.api_ebysKarar(id, true, '').ok, false);
-  giris('onay@yasar.edu.tr');
-  assert.equal(c.api_baslangic().onayBekleyenler.length, 1);
-  assert.equal(c.api_ebysKarar(id, false, '').ok, false);
-  assert.equal(c.api_ebysKarar(id, false, 'Onay tarihi hatalı').ok, true);
-  assert.equal(etkinlik(id).Durum, 'ON_REZERVASYON');
-  assert.equal(etkinlik(id).KontrolNotu, 'Onay tarihi hatalı');
+    giris('talep@yasar.edu.tr');
+    assert.equal((await c.api_ebysGonder(id, { ebysNo: 'E-123456', ebysTarih: db.bugun(), dosya: PDF })).ok, true);
+    giris('onay@yasar.edu.tr');
+    assert.equal((await c.api_ebysKarar(id, true, '')).ok, true);
+    assert.equal((await etkinlik(id)).Durum, 'DETAY_BEKLENIYOR');
 
-  giris('talep@yasar.edu.tr');
-  assert.equal(c.api_ebysGonder(id, { ebysNo: 'E-123456', ebysTarih: c.bugun_(), dosya: PDF }).ok, true);
-  giris('onay@yasar.edu.tr');
-  assert.equal(c.api_ebysKarar(id, true, '').ok, true);
-  assert.equal(etkinlik(id).Durum, 'DETAY_BEKLENIYOR');
+    // Detay formu → iki birime görev
+    giris('talep@yasar.edu.tr');
+    r = await c.api_detayKaydet(id, { afis: 'DIJITAL', afisTasarim: 'KURUMSAL_ILETISIM', duyuru: [], ses: true, mikrofonSayisi: '2', ikram: 'YOK', oturmaDuzeni: 'MEVCUT' });
+    assert.equal(r.ok, true, r.mesaj);
+    assert.equal((await etkinlik(id)).Durum, 'HAZIRLIK');
+    const gorevler = (await db.hepsi('Gorevler')).filter((x) => x.EtkinlikID === id);
+    assert.deepEqual(gorevler.map((x) => x.Birim).sort(), ['BILGI_ISLEM', 'KURUMSAL_ILETISIM']);
+    assert.equal((await c.api_baslangic()).etkinliklerim[0].Detay.ses, true);
 
-  // Detay formu → iki birime görev
-  giris('talep@yasar.edu.tr');
-  r = c.api_detayKaydet(id, { afis: 'DIJITAL', afisTasarim: 'KURUMSAL_ILETISIM', duyuru: [], ses: true, mikrofonSayisi: '2', ikram: 'YOK', oturmaDuzeni: 'MEVCUT' });
-  assert.equal(r.ok, true, r.mesaj);
-  assert.equal(etkinlik(id).Durum, 'HAZIRLIK');
-  const gorevler = c.db_hepsi_('Gorevler').filter((x) => x.EtkinlikID === id);
-  assert.deepEqual(Array.from(gorevler, (x) => x.Birim).sort(), ['BILGI_ISLEM', 'KURUMSAL_ILETISIM']);
-  assert.equal(c.api_baslangic().etkinliklerim[0].Detay.ses, true);
+    // Her birim yalnızca kendi görevini günceller
+    const biGorev = gorevler.find((x) => x.Birim === 'BILGI_ISLEM');
+    const kiGorev = gorevler.find((x) => x.Birim === 'KURUMSAL_ILETISIM');
+    giris('bi@yasar.edu.tr');
+    assert.equal((await c.api_baslangic()).gorevlerim.length, 1);
+    assert.equal((await c.api_gorevGuncelle(kiGorev.GorevID, 'KABUL', '')).ok, false);
+    assert.equal((await c.api_gorevGuncelle(biGorev.GorevID, 'RED', '')).ok, false, 'red için not zorunlu');
+    assert.equal((await c.api_gorevGuncelle(biGorev.GorevID, 'KABUL', '')).ok, true);
+    assert.equal((await etkinlik(id)).Durum, 'HAZIRLIK');
+    giris('ki@yasar.edu.tr');
+    assert.equal((await c.api_gorevGuncelle(kiGorev.GorevID, 'KABUL', 'Afiş 3 gün içinde')).ok, true);
+    assert.equal((await etkinlik(id)).Durum, 'KESINLESTI');
 
-  // Her birim yalnızca kendi görevini günceller
-  const biGorev = gorevler.find((x) => x.Birim === 'BILGI_ISLEM');
-  const kiGorev = gorevler.find((x) => x.Birim === 'KURUMSAL_ILETISIM');
-  giris('bi@yasar.edu.tr');
-  assert.equal(c.api_baslangic().gorevlerim.length, 1);
-  assert.equal(c.api_gorevGuncelle(kiGorev.GorevID, 'KABUL', '').ok, false);
-  assert.equal(c.api_gorevGuncelle(biGorev.GorevID, 'RED', '').ok, false, 'red için not zorunlu');
-  assert.equal(c.api_gorevGuncelle(biGorev.GorevID, 'KABUL', '').ok, true);
-  assert.equal(etkinlik(id).Durum, 'HAZIRLIK');
-  giris('ki@yasar.edu.tr');
-  assert.equal(c.api_gorevGuncelle(kiGorev.GorevID, 'KABUL', 'Afiş 3 gün içinde').ok, true);
-  assert.equal(etkinlik(id).Durum, 'KESINLESTI');
+    // Takvimde görünür
+    assert.ok((await c.api_baslangic()).takvim.some((x) => x.EtkinlikID === id));
 
-  // Takvimde görünür
-  assert.ok(c.api_baslangic().takvim.some((x) => x.EtkinlikID === id));
+    // İptal → yedek terfi eder
+    giris('talep@yasar.edu.tr');
+    assert.equal((await c.api_iptal(id, 'Ertelendi')).ok, true);
+    assert.equal((await etkinlik(id)).Durum, 'IPTAL');
+    assert.equal((await etkinlik(yedekId)).Durum, 'ON_REZERVASYON');
+    assert.ok((await etkinlik(yedekId)).OnRezBitis);
 
-  // İptal → yedek terfi eder
-  giris('talep@yasar.edu.tr');
-  assert.equal(c.api_iptal(id, 'Ertelendi').ok, true);
-  assert.equal(etkinlik(id).Durum, 'IPTAL');
-  assert.equal(etkinlik(yedekId).Durum, 'ON_REZERVASYON');
-  assert.ok(etkinlik(yedekId).OnRezBitis);
-
-  // Log her adımı tutar
-  const islemler = c.db_hepsi_('Log').filter((x) => x.EtkinlikID === id).map((x) => x.Islem);
-  ['OLUSTURULDU', 'EBYS_GIRILDI', 'EBYS_IADE', 'EBYS_ONAYLANDI', 'DETAY_KAYDEDILDI', 'GOREV_KABUL', 'KESINLESTI', 'IPTAL']
-    .forEach((x) => assert.ok(islemler.includes(x), x));
+    // Log her adımı tutar
+    const islemler = (await db.hepsi('Log')).filter((x) => x.EtkinlikID === id).map((x) => x.Islem);
+    ['OLUSTURULDU', 'EBYS_GIRILDI', 'EBYS_IADE', 'EBYS_ONAYLANDI', 'DETAY_KAYDEDILDI', 'GOREV_KABUL', 'KESINLESTI', 'IPTAL']
+      .forEach((x) => assert.ok(islemler.includes(x), x));
+  } finally { await kapat(); }
 });
 
-test('EBYS muafiyeti yalnızca yetkili rolde, gerekçeyle ve asgari süre aranmadan', () => {
-  const { c, bugun, giris, etkinlik } = ortam();
-  const yakin = c.Logic.isGunuEkle(bugun, 2);
+test('EBYS muafiyeti yalnızca yetkili rolde, gerekçeyle ve asgari süre aranmadan', async () => {
+  const { c, db, Logic, giris, etkinlik, kapat } = await ortam();
+  try {
+    const yakin = Logic.isGunuEkle(db.bugun(), 2);
+    giris('talep@yasar.edu.tr');
+    let r = await c.api_onRezervasyonOlustur(talep(yakin, { ebysMuaf: true, muafGerekce: 'x' }));
+    assert.equal(r.ok, false);
+    assert.match(r.mesaj, /yetkiniz/);
 
-  giris('talep@yasar.edu.tr');
-  let r = c.api_onRezervasyonOlustur(talep(yakin, { ebysMuaf: true, muafGerekce: 'x' }));
-  assert.equal(r.ok, false);
-  assert.match(r.mesaj, /yetkiniz/);
+    giris('gs@yasar.edu.tr');
+    r = await c.api_onRezervasyonOlustur(talep(yakin, { ebysMuaf: true }));
+    assert.equal(r.ok, false);
+    assert.match(r.mesaj, /gerekçe/);
+    r = await c.api_onRezervasyonOlustur(talep(yakin, { ebysMuaf: true, muafGerekce: 'Bakan ziyareti', protokolDuzeyi: 'UST_DUZEY' }));
+    assert.equal(r.ok, true, r.mesaj);
+    const id = r.etkinlik.EtkinlikID;
+    assert.equal((await etkinlik(id)).Durum, 'DETAY_BEKLENIYOR');
+    assert.equal((await etkinlik(id)).EbysMuaf, 'EVET');
 
-  giris('gs@yasar.edu.tr');
-  r = c.api_onRezervasyonOlustur(talep(yakin, { ebysMuaf: true }));
-  assert.equal(r.ok, false);
-  assert.match(r.mesaj, /gerekçe/);
-  r = c.api_onRezervasyonOlustur(talep(yakin, { ebysMuaf: true, muafGerekce: 'Bakan ziyareti', protokolDuzeyi: 'UST_DUZEY' }));
-  assert.equal(r.ok, true, r.mesaj);
-  const id = r.etkinlik.EtkinlikID;
-  assert.equal(etkinlik(id).Durum, 'DETAY_BEKLENIYOR');
-  assert.equal(etkinlik(id).EbysMuaf, 'EVET');
+    // Sonradan EBYS bağlama, durum değişmeden
+    r = await c.api_ebysSonradanBagla(id, { ebysNo: 'E-999999', ebysTarih: db.bugun() });
+    assert.equal(r.ok, true, r.mesaj);
+    assert.equal((await etkinlik(id)).EbysNo, 'E-999999');
+    assert.equal((await etkinlik(id)).Durum, 'DETAY_BEKLENIYOR');
 
-  // Sonradan EBYS bağlama, durum değişmeden
-  r = c.api_ebysSonradanBagla(id, { ebysNo: 'E-999999', ebysTarih: bugun });
-  assert.equal(r.ok, true, r.mesaj);
-  assert.equal(etkinlik(id).EbysNo, 'E-999999');
-  assert.equal(etkinlik(id).Durum, 'DETAY_BEKLENIYOR');
-
-  // Üst düzey protokol → güvenlik ve protokol görevleri
-  r = c.api_detayKaydet(id, { afis: 'YOK', ikram: 'YOK', oturmaDuzeni: 'MEVCUT', duyuru: [], protokolListesi: 'Bakan' });
-  assert.equal(r.ok, true, r.mesaj);
-  const birimler = Array.from(c.db_hepsi_('Gorevler').filter((x) => x.EtkinlikID === id), (x) => x.Birim).sort();
-  assert.deepEqual(birimler, ['GUVENLIK', 'PROTOKOL']);
+    // Üst düzey protokol → güvenlik ve protokol görevleri
+    r = await c.api_detayKaydet(id, { afis: 'YOK', ikram: 'YOK', oturmaDuzeni: 'MEVCUT', duyuru: [], protokolListesi: 'Bakan' });
+    assert.equal(r.ok, true, r.mesaj);
+    const birimler = (await db.hepsi('Gorevler')).filter((x) => x.EtkinlikID === id).map((x) => x.Birim).sort();
+    assert.deepEqual(birimler, ['GUVENLIK', 'PROTOKOL']);
+  } finally { await kapat(); }
 });
 
-test('asgari başvuru süresi ve aynı EBYS numarasının tekrar kullanımı engellenir', () => {
-  const { c, bugun, ileri, giris } = ortam();
-  giris('talep@yasar.edu.tr');
-  let r = c.api_onRezervasyonOlustur(talep(c.Logic.isGunuEkle(bugun, 3)));
-  assert.equal(r.ok, false);
-  assert.match(r.mesaj, /en az 10 gün/);
+test('asgari başvuru süresi ve aynı EBYS numarasının tekrar kullanımı engellenir', async () => {
+  const { c, db, Logic, ileri, giris, kapat } = await ortam();
+  try {
+    giris('talep@yasar.edu.tr');
+    let r = await c.api_onRezervasyonOlustur(talep(Logic.isGunuEkle(db.bugun(), 3)));
+    assert.equal(r.ok, false);
+    assert.match(r.mesaj, /en az 10 gün/);
 
-  const a = c.api_onRezervasyonOlustur(talep(ileri)).etkinlik.EtkinlikID;
-  const b = c.api_onRezervasyonOlustur(talep(ileri, { baslangic: '14:00', bitis: '15:00' })).etkinlik.EtkinlikID;
-  assert.equal(c.api_ebysGonder(a, { ebysNo: 'E-111111', ebysTarih: bugun, dosya: PDF }).ok, true);
-  r = c.api_ebysGonder(b, { ebysNo: 'e-111111', ebysTarih: bugun, dosya: PDF });
-  assert.equal(r.ok, false);
-  assert.match(r.mesaj, /başka bir etkinlikte/);
+    const a = (await c.api_onRezervasyonOlustur(talep(ileri))).etkinlik.EtkinlikID;
+    const b = (await c.api_onRezervasyonOlustur(talep(ileri, { baslangic: '14:00', bitis: '15:00' }))).etkinlik.EtkinlikID;
+    assert.equal((await c.api_ebysGonder(a, { ebysNo: 'E-111111', ebysTarih: db.bugun(), dosya: PDF })).ok, true);
+    r = await c.api_ebysGonder(b, { ebysNo: 'e-111111', ebysTarih: db.bugun(), dosya: PDF });
+    assert.equal(r.ok, false);
+    assert.match(r.mesaj, /başka bir etkinlikte/);
+  } finally { await kapat(); }
 });
 
-test('uzatma bir kez yapılır; süresi dolan ön rezervasyon gece görevinde düşer', () => {
-  const { c, ileri, giris, etkinlik } = ortam();
-  giris('talep@yasar.edu.tr');
-  const id = c.api_onRezervasyonOlustur(talep(ileri)).etkinlik.EtkinlikID;
-  const ilkBitis = etkinlik(id).OnRezBitis;
-  assert.equal(c.api_uzat(id, '').ok, false, 'gerekçe zorunlu');
-  assert.equal(c.api_uzat(id, 'Rektörlükte bekliyor').ok, true);
-  assert.ok(etkinlik(id).OnRezBitis > ilkBitis);
-  assert.equal(c.api_uzat(id, 'Tekrar').ok, false, 'MAX_UZATMA = 1');
-
-  c.db_guncelle_('Etkinlikler', 'EtkinlikID', id, { OnRezBitis: '2020-01-01' });
-  assert.throws(() => c.gunlukSureKontrolu(), /script sahibi/, 'web kullanıcısı gece görevini çalıştıramaz');
-  giris(''); // zamanlanmış tetikleyici
-  c.gunlukSureKontrolu();
-  assert.equal(etkinlik(id).Durum, 'SURESI_DOLDU');
+test('PDF olmayan dosya ve fazla büyük dosya reddedilir', async () => {
+  const { c, db, ileri, giris, kapat } = await ortam();
+  try {
+    giris('talep@yasar.edu.tr');
+    const id = (await c.api_onRezervasyonOlustur(talep(ileri))).etkinlik.EtkinlikID;
+    let r = await c.api_ebysGonder(id, { ebysNo: 'E-222222', ebysTarih: db.bugun(),
+      dosya: { ad: 'x.pdf', mimeType: 'application/pdf', base64: Buffer.from('MZ-calistirilabilir').toString('base64') } });
+    assert.equal(r.ok, false);
+    assert.match(r.mesaj, /geçerli bir PDF/);
+    const buyuk = Buffer.concat([Buffer.from('%PDF-'), Buffer.alloc(4 * 1024 * 1024)]).toString('base64');
+    r = await c.api_ebysGonder(id, { ebysNo: 'E-222222', ebysTarih: db.bugun(), dosya: { ad: 'x.pdf', mimeType: 'application/pdf', base64: buyuk } });
+    assert.equal(r.ok, false);
+    assert.match(r.mesaj, /en fazla 3 MB/);
+  } finally { await kapat(); }
 });
 
-test('tanımsız kullanıcı ve başka alan adı giremez', () => {
-  const { c, giris } = ortam();
-  giris('yabanci@yasar.edu.tr');
-  let r = c.api_baslangic();
-  assert.equal(r.ok, false);
-  assert.match(r.mesaj, /tanımlı değil/);
-  giris('biri@gmail.com');
-  r = c.api_baslangic();
-  assert.equal(r.ok, false);
-  assert.match(r.mesaj, /yasar\.edu\.tr/);
+test('uzatma bir kez yapılır; süresi dolan ön rezervasyon gece görevinde düşer, yedek terfi eder', async () => {
+  const { c, db, ileri, giris, etkinlik, rezervasyon, postalar, kapat } = await ortam();
+  try {
+    giris('talep@yasar.edu.tr');
+    const id = (await c.api_onRezervasyonOlustur(talep(ileri))).etkinlik.EtkinlikID;
+    giris('talep2@yasar.edu.tr');
+    const yedek = (await c.api_onRezervasyonOlustur(talep(ileri, { yedegeAl: true }))).etkinlik.EtkinlikID;
+    giris('talep@yasar.edu.tr');
+    const ilkBitis = (await etkinlik(id)).OnRezBitis;
+    assert.equal((await c.api_uzat(id, '')).ok, false, 'gerekçe zorunlu');
+    assert.equal((await c.api_uzat(id, 'Rektörlükte bekliyor')).ok, true);
+    assert.ok((await etkinlik(id)).OnRezBitis > ilkBitis);
+    assert.equal((await c.api_uzat(id, 'Tekrar')).ok, false, 'MAX_UZATMA = 1');
+
+    await db.guncelle('Etkinlikler', 'EtkinlikID', id, { OnRezBitis: '2020-01-01' });
+    const sonuc = await rezervasyon.gunlukSureKontrolu();
+    assert.equal(sonuc.dusen, 1);
+    assert.equal((await etkinlik(id)).Durum, 'SURESI_DOLDU');
+    assert.equal((await etkinlik(yedek)).Durum, 'ON_REZERVASYON', 'yedek terfi etmeli');
+    assert.ok(postalar.some((m) => /süresi doldu/.test(m.subject)));
+    assert.deepEqual(await rezervasyon.gunlukSureKontrolu(), { dusen: 0, hatirlatma: 0, tamamlanan: 0 }, 'ikinci çalıştırma bir şey yapmamalı');
+  } finally { await kapat(); }
 });
 
-test('editör fonksiyonları yalnızca script sahibine açık', () => {
-  const { c, giris } = ortam();
-  giris('talep@yasar.edu.tr');
-  assert.throws(() => c.kurulum(), /script sahibi/);
-  assert.throws(() => c.ornekVerileriYukle(), /script sahibi/);
-  assert.throws(() => c.gunlukSureKontroluCalistir(), /script sahibi/);
-  giris('');
-  assert.throws(() => c.kurulum(), /script sahibi/);
-  giris('kurucu@yasar.edu.tr');
-  c.kurulum();
+test('tanımsız kullanıcı ve başka alan adı giremez', async () => {
+  const { c, giris, kapat } = await ortam();
+  try {
+    giris('yabanci@yasar.edu.tr');
+    let r = await c.api_baslangic();
+    assert.equal(r.ok, false);
+    assert.match(r.mesaj, /tanımlı değil/);
+    giris('biri@gmail.com');
+    r = await c.api_baslangic();
+    assert.equal(r.ok, false);
+    assert.match(r.mesaj, /yasar\.edu\.tr/);
+    giris('');
+    assert.equal((await c.api_baslangic()).ok, false);
+  } finally { await kapat(); }
 });
 
-test('iç veri ve e-posta fonksiyonları istemciye kapalı (adı _ ile biter)', () => {
-  const { c } = ortam();
-  ['db_guncelle', 'db_ekle', 'db_hepsi', 'bildir', 'kullaniciBul', 'epostalar', 'logYaz', 'ayar']
-    .forEach((ad) => assert.equal(typeof c[ad], 'undefined', ad + ' istemciden çağrılabilir olmamalı'));
+test('hata olursa işlem geri alınır, e-posta gitmez', async () => {
+  const { db, ileri, kapat, postalar } = await ortam();
+  try {
+    const { bildir } = require('../sunucu/bildirim');
+    await assert.rejects(db.kilitle(async () => {
+      await db.logYaz('x', '', 'DENEME', '');
+      await bildir('a@yasar.edu.tr', 'konu', 'mesaj', '');
+      throw new Error('patladı');
+    }), /patladı/);
+    assert.equal((await db.hepsi('Log')).filter((l) => l.Islem === 'DENEME').length, 0);
+    assert.equal(postalar.length, 0);
+    assert.ok(ileri);
+  } finally { await kapat(); }
+});
+
+test('eşzamanlı iki talep aynı mekâna çifte kayıt oluşturmaz', async () => {
+  const { c, db, ileri, giris, kapat } = await ortam();
+  try {
+    giris('talep@yasar.edu.tr');
+    const a = c.api_onRezervasyonOlustur(talep(ileri));
+    const b = c.api_onRezervasyonOlustur(talep(ileri, { ad: 'Aynı saat' }));
+    const [ra, rb] = await Promise.all([a, b]);
+    assert.equal([ra, rb].filter((x) => x.cakisma).length, 1, 'biri çakışma uyarısı almalı');
+    assert.equal((await db.hepsi('Etkinlikler')).length, 1);
+  } finally { await kapat(); }
+});
+
+test('EBYS PDF dosyası yalnızca yetkili kullanıcıya açılır', async () => {
+  const { c, db, ileri, giris, kapat } = await ortam();
+  try {
+    giris('talep@yasar.edu.tr');
+    const id = (await c.api_onRezervasyonOlustur(talep(ileri))).etkinlik.EtkinlikID;
+    const r = await c.api_ebysGonder(id, { ebysNo: 'E-333333', ebysTarih: db.bugun(), dosya: PDF });
+    const dosyaId = (await db.bul('Etkinlikler', 'EtkinlikID', id)).EbysEkUrl.split('/').pop();
+    assert.equal(r.ok, true);
+    assert.equal((await dosyaGetir('talep@yasar.edu.tr', dosyaId)).icerik.slice(0, 4).toString(), '%PDF');
+    assert.ok(await dosyaGetir('onay@yasar.edu.tr', dosyaId), 'birim onaycısı açabilir');
+    assert.ok(await dosyaGetir('kurucu@yasar.edu.tr', dosyaId), 'yönetici açabilir');
+    await assert.rejects(dosyaGetir('talep2@yasar.edu.tr', dosyaId), /yetkiniz yok/);
+    await assert.rejects(dosyaGetir('bi@yasar.edu.tr', dosyaId), /yetkiniz yok/);
+  } finally { await kapat(); }
 });

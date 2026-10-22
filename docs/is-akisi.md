@@ -1,6 +1,6 @@
 # İş akışı ve durumlar
 
-Durumlar ve izin verilen geçişler `apps-script/Logic.js` içindeki `DURUM` ve `GECISLER` sabitlerindedir. Bu doküman onların açıklamasıdır; kod ile çelişirse kod esastır ve bu dosya güncellenmelidir.
+Durumlar ve izin verilen geçişler `sunucu/logic.js` içindeki `DURUM` ve `GECISLER` sabitlerindedir. Bu doküman onların açıklamasıdır; kod ile çelişirse kod esastır ve bu dosya güncellenmelidir.
 
 ```mermaid
 stateDiagram-v2
@@ -49,7 +49,7 @@ stateDiagram-v2
 
 `RED` ve `BILGI_ISTENDI` için not zorunludur ve talep edene e-posta gider. Etkinlik, tüm görevleri `KABUL` veya `TAMAMLANDI` olunca kesinleşir.
 
-## Gece görevi (`gunlukSureKontrolu`, her gün 02:00)
+## Gece görevi (`gunlukSureKontrolu`, her gün 02:00; Vercel Cron)
 
 1. Bitişi geçmiş ön rezervasyonları `SURESI_DOLDU` yapar, sahibine bildirir, sıradaki yedeği terfi ettirir.
 2. Bitişine `HATIRLATMA_GUN` iş günü kalanlara hatırlatma gönderir.

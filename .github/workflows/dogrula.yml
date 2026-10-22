@@ -8,10 +8,29 @@ on:
 jobs:
   dogrula:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: etk
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
           node-version: 24
-      - name: Testler ve statik kontrol
+      - name: Bağımlılıkları kur
+        run: npm ci
+      - name: Testler ve statik kontrol (bellekte PostgreSQL)
         run: npm run dogrula
+      - name: Testler (gerçek PostgreSQL 16)
+        run: node --test --test-concurrency=1 "tests/**/*.test.js"
+        env:
+          TEST_DATABASE_URL: postgres://postgres:test@localhost:5432/etk

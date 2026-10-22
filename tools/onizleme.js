@@ -1,87 +1,73 @@
 #!/usr/bin/env node
 /**
- * Arayüzü Google'a yüklemeden tarayıcıda görmek için: npm run onizleme
+ * Arayüzü sunucusuz, tarayıcıda görmek için: npm run onizleme
  *
- * Sahte Google servisleriyle örnek bir senaryo kurar (her durumda birkaç etkinlik),
- * api_baslangic çıktısını alır ve onizleme/index.html dosyasına gömer.
- * Dosyayı tarayıcıda açın. Butonlar sunucuya gitmez; yalnızca "önizleme" mesajı gösterir.
+ * Bellekte bir PostgreSQL (PGlite) kurar, örnek bir senaryo yükler (her durumda birkaç etkinlik),
+ * api_baslangic çıktısını alır ve onizleme/index.html dosyasına gömer. Butonlar sunucuya gitmez;
+ * yalnızca "önizleme" mesajı gösterir. Gerçek uygulama için: npm run dev
  */
 const fs = require('fs');
 const path = require('path');
-const { yukle } = require('../tests/gas-mock');
+const { ortam, PDF } = require('../tests/ortam');
+const { ornekVerileriYukle } = require('../sunucu/kurulum');
 
-const g = yukle();
-const c = g.ctx;
-g.oturum.eposta = 'kurucu@yasar.edu.tr';
-c.kurulum();
+(async () => {
+  const o = await ortam();
+  const { c, db, Logic, giris } = o;
+  await db.sorgu('DELETE FROM "Mekanlar"');
+  await ornekVerileriYukle();
+  await db.ekle('Kullanicilar', { Eposta: 'ayse.yilmaz@yasar.edu.tr', AdSoyad: 'Ayşe Yılmaz', Birim: 'ORNEK_FAKULTE', Roller: 'TALEP_EDEN', OnayBirimleri: '', Aktif: 'EVET' });
+  await db.guncelle('Kullanicilar', 'Eposta', 'kurucu@yasar.edu.tr', { AdSoyad: 'Deneme Yöneticisi', Birim: 'ORNEK_FAKULTE' });
 
-const kisiler = [
-  ['ayse.yilmaz@yasar.edu.tr', 'Ayşe Yılmaz', 'ORNEK_FAKULTE', 'TALEP_EDEN', ''],
-  ['bi@yasar.edu.tr', 'Bilgi İşlem', 'BILGI_ISLEM', 'HIZMET_BIRIMI', ''],
-  ['ki@yasar.edu.tr', 'Kurumsal İletişim', 'KURUMSAL_ILETISIM', 'HIZMET_BIRIMI', '']
-];
-kisiler.forEach(([Eposta, AdSoyad, Birim, Roller, OnayBirimleri]) =>
-  c.db_ekle_('Kullanicilar', { Eposta, AdSoyad, Birim, Roller, OnayBirimleri, Aktif: 'EVET' }));
-c.db_guncelle_('Kullanicilar', 'Eposta', 'kurucu@yasar.edu.tr', { AdSoyad: 'Deneme Yöneticisi', Birim: 'ORNEK_FAKULTE' });
-c.ornekVerileriYukle();
+  const bugun = db.bugun();
+  const gun = (n) => Logic.isGunuEkle(bugun, n);
+  const ac = async (ad, tarih, bas, bit, ek) => {
+    const r = await c.api_onRezervasyonOlustur(Object.assign({ ad, tur: 'Seminer', mekanId: 'ORNEK-KS', tarih,
+      baslangic: bas, bitis: bit, katilimciSayisi: '120', protokolDuzeyi: 'STANDART' }, ek));
+    if (!r.ok) throw new Error(ad + ': ' + r.mesaj);
+    return r.etkinlik.EtkinlikID;
+  };
 
-const PDF = { ad: 'onay.pdf', mimeType: 'application/pdf', base64: Buffer.from('%PDF').toString('base64') };
-const bugun = c.bugun_();
-const gun = (n) => c.Logic.isGunuEkle(bugun, n);
-const ac = (ad, tarih, bas, bit, ek) => {
-  const r = c.api_onRezervasyonOlustur(Object.assign({ ad, tur: 'Seminer', mekanId: 'ORNEK-KS', tarih,
-    baslangic: bas, bitis: bit, katilimciSayisi: '120', protokolDuzeyi: 'STANDART' }, ek));
-  if (!r.ok) throw new Error(ad + ': ' + r.mesaj);
-  return r.etkinlik.EtkinlikID;
-};
+  giris('kurucu@yasar.edu.tr');
+  await ac('Yapay Zekâ ve Etik Paneli', gun(15), '10:00', '12:00', { tur: 'Panel' });
+  const kontrol = await ac('Kariyer Günleri 2026', gun(16), '09:30', '17:00', { tur: 'Konferans', katilimciSayisi: '250' });
+  await c.api_ebysGonder(kontrol, { ebysNo: 'E-48213577', ebysTarih: bugun, dosya: PDF });
+  const detay = await ac('Mezunlar Buluşması', gun(18), '18:00', '21:00', { tur: 'Sosyal / kültürel', mekanId: 'ORNEK-FUAYE' });
+  await c.api_ebysGonder(detay, { ebysNo: 'E-48213999', ebysTarih: bugun, dosya: PDF });
+  await c.api_ebysKarar(detay, true, '');
+  const hazirlik = await ac('Sürdürülebilirlik Çalıştayı', gun(20), '13:00', '16:00', { tur: 'Çalıştay', mekanId: 'ORNEK-SEM1', katilimciSayisi: '40' });
+  await c.api_ebysGonder(hazirlik, { ebysNo: 'E-48214101', ebysTarih: bugun, dosya: PDF });
+  await c.api_ebysKarar(hazirlik, true, '');
+  await c.api_detayKaydet(hazirlik, { afis: 'DIJITAL', afisTasarim: 'KURUMSAL_ILETISIM', duyuru: ['SOSYAL_MEDYA', 'WEB'], ses: true, mikrofonSayisi: '2', projeksiyon: true, ikram: 'CAY_KAHVE', ikramKisi: '40', oturmaDuzeni: 'YUVARLAK_MASA' });
+  const gorevler = (await db.hepsi('Gorevler')).filter((x) => x.EtkinlikID === hazirlik);
+  giris('bi@yasar.edu.tr');
+  await c.api_gorevGuncelle(gorevler.find((x) => x.Birim === 'BILGI_ISLEM').GorevID, 'KABUL', 'Teknisyen 12:30\'da salonda');
+  giris('ayse.yilmaz@yasar.edu.tr');
+  await ac('Robotik Kulübü Tanıtım', gun(15), '11:00', '13:00', { tur: 'Kulüp etkinliği', yedegeAl: true });
+  giris('kurucu@yasar.edu.tr');
+  await ac('Rektörlük Protokol Ziyareti', gun(2), '14:00', '15:00', { ebysMuaf: true, muafGerekce: 'Valilik ziyareti kısa sürede planlandı', protokolDuzeyi: 'UST_DUZEY', tur: 'Diğer', mekanId: 'ORNEK-SEM1', katilimciSayisi: '30' });
 
-g.oturum.eposta = 'kurucu@yasar.edu.tr';
-ac('Yapay Zekâ ve Etik Paneli', gun(15), '10:00', '12:00', { tur: 'Panel' });
-const kontrol = ac('Kariyer Günleri 2026', gun(16), '09:30', '17:00', { tur: 'Konferans', katilimciSayisi: '250' });
-c.api_ebysGonder(kontrol, { ebysNo: 'E-48213577', ebysTarih: bugun, dosya: PDF });
-const detay = ac('Mezunlar Buluşması', gun(18), '18:00', '21:00', { tur: 'Sosyal / kültürel', mekanId: 'ORNEK-FUAYE' });
-c.api_ebysGonder(detay, { ebysNo: 'E-48213999', ebysTarih: bugun, dosya: PDF });
-c.api_ebysKarar(detay, true, '');
-const hazirlik = ac('Sürdürülebilirlik Çalıştayı', gun(20), '13:00', '16:00', { tur: 'Çalıştay', mekanId: 'ORNEK-SEM1', katilimciSayisi: '40' });
-c.api_ebysGonder(hazirlik, { ebysNo: 'E-48214101', ebysTarih: bugun, dosya: PDF });
-c.api_ebysKarar(hazirlik, true, '');
-c.api_detayKaydet(hazirlik, { afis: 'DIJITAL', afisTasarim: 'KURUMSAL_ILETISIM', duyuru: ['SOSYAL_MEDYA', 'WEB'], ses: true, mikrofonSayisi: '2', projeksiyon: true, ikram: 'CAY_KAHVE', ikramKisi: '40', oturmaDuzeni: 'YUVARLAK_MASA' });
-const gorevler = c.db_hepsi_('Gorevler').filter((x) => x.EtkinlikID === hazirlik);
-g.oturum.eposta = 'bi@yasar.edu.tr';
-c.api_gorevGuncelle(gorevler.find((x) => x.Birim === 'BILGI_ISLEM').GorevID, 'KABUL', 'Teknisyen 12:30\'da salonda');
+  const veri = await c.api_baslangic();
+  if (!veri.ok) throw new Error(veri.mesaj);
+  await o.kapat();
 
-g.oturum.eposta = 'ayse.yilmaz@yasar.edu.tr';
-ac('Robotik Kulübü Tanıtım', gun(15), '11:00', '13:00', { tur: 'Kulüp etkinliği', yedegeAl: true });
-g.oturum.eposta = 'kurucu@yasar.edu.tr';
-ac('Rektörlük Protokol Ziyareti', gun(2), '14:00', '15:00', { ebysMuaf: true, muafGerekce: 'Valilik ziyareti kısa sürede planlandı', protokolDuzeyi: 'UST_DUZEY', tur: 'Diğer', mekanId: 'ORNEK-SEM1', katilimciSayisi: '30' });
-
-const veri = c.api_baslangic();
-if (!veri.ok) throw new Error(veri.mesaj);
-
-const kok = path.join(__dirname, '..', 'apps-script');
-const oku = (f) => fs.readFileSync(path.join(kok, f), 'utf8');
-const sahteRun = `<script>
-  window.__VERI = ${JSON.stringify(veri)};
-  (function () {
-    function kosucu(basari, hata) {
-      return new Proxy({}, { get: function (_, ad) {
-        if (ad === 'withSuccessHandler') return function (f) { return kosucu(f, hata); };
-        if (ad === 'withFailureHandler') return function (f) { return kosucu(basari, f); };
-        return function () {
-          setTimeout(function () {
-            basari && basari(ad === 'api_baslangic' ? window.__VERI : { ok: true, mesaj: 'Önizleme: ' + ad + ' sunucuya gönderilmedi.' });
-          }, 120);
-        };
-      } });
-    }
-    window.google = { script: { run: kosucu() } };
-  })();
+  const arayuz = path.join(__dirname, '..', 'sunucu', 'arayuz');
+  const oku = (f) => fs.readFileSync(path.join(arayuz, f), 'utf8');
+  const sahteFetch = `<script>
+  window.__VERI = ${JSON.stringify(veri).replace(/</g, '\\u003c')};
+  window.fetch = function (adres) {
+    var ad = decodeURIComponent(String(adres).split('/').pop());
+    var yanit = ad === 'api_baslangic' ? window.__VERI : { ok: true, mesaj: 'Önizleme: ' + ad + ' sunucuya gönderilmedi.' };
+    return new Promise(function (coz) {
+      setTimeout(function () { coz({ status: 200, json: function () { return Promise.resolve(yanit); } }); }, 120);
+    });
+  };
 </script>`;
-const html = oku('Index.html')
-  .replace("<?!= include_('Styles') ?>", oku('Styles.html'))
-  .replace("<?!= include_('App') ?>", sahteRun + oku('App.html'));
-
-const hedef = path.join(__dirname, '..', 'onizleme');
-fs.mkdirSync(hedef, { recursive: true });
-fs.writeFileSync(path.join(hedef, 'index.html'), html);
-console.log('Önizleme hazır: ' + path.join(hedef, 'index.html'));
+  const html = oku('index.html')
+    .replace('{{STIL}}', () => oku('stil.html'))
+    .replace('{{UYGULAMA}}', () => sahteFetch + oku('uygulama.html'));
+  const hedef = path.join(__dirname, '..', 'onizleme');
+  fs.mkdirSync(hedef, { recursive: true });
+  fs.writeFileSync(path.join(hedef, 'index.html'), html);
+  console.log('Önizleme hazır: ' + path.join(hedef, 'index.html'));
+})().catch((e) => { console.error(e); process.exit(1); });

@@ -1,75 +1,78 @@
 #!/usr/bin/env node
 /**
- * Apps Script kodunu yerelde kontrol eder (clasp push öncesi çalıştırın): npm run kontrol
+ * Sunucu ve arayüz kodunu yerelde kontrol eder: npm run kontrol
  *
- * 1) Her .js dosyasının ve HTML içindeki <script> bloklarının sözdizimi
- * 2) Tüm .js dosyaları HERHANGİ bir sırayla yüklendiğinde üst düzeyde hata vermemesi
- *    (Apps Script dosya sırasını garanti etmez; dosyalar arası bağımlılık yalnızca fonksiyon içinde olmalı)
- * 3) App.html'deki cagir('api_x') çağrılarının sunucuda karşılığı olması
- * 4) Şablonlardaki include_('X') dosyalarının var olması
- * 5) İstemciye açık (adı _ ile bitmeyen) fonksiyonların yalnızca izin verilenler olması.
- *    Apps Script'te bu fonksiyonların hepsi google.script.run ile her kullanıcı tarafından çağrılabilir.
+ * 1) sunucu/*.js ve api/*.js dosyalarının, arayüzdeki <script> bloklarının sözdizimi
+ * 2) uygulama.html'deki cagir('api_x') çağrılarının sunucudaki izin listesinde (API) karşılığı olması
+ * 3) İzin listesindeki her fonksiyonun adının api_ ile başlaması ve ilk parametresinin oturum e-postası olması
+ * 4) Arayüz şablonundaki yer tutucuların ({{STIL}}, {{UYGULAMA}}) bulunması
+ * 5) Eski Google Apps Script API'lerine (google.script, SpreadsheetApp vb.) kalıntı referans olmaması
+ * 6) vercel.json: işlev, yönlendirme ve cron tanımları
  */
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-const kok = path.join(__dirname, '..', 'apps-script');
-const dosyalar = fs.readdirSync(kok);
-const jsDosyalari = dosyalar.filter((f) => f.endsWith('.js'));
-const htmlDosyalari = dosyalar.filter((f) => f.endsWith('.html'));
+const kok = path.join(__dirname, '..');
+const sunucu = path.join(kok, 'sunucu');
+const arayuz = path.join(sunucu, 'arayuz');
 const hatalar = [];
+
+const jsDosyalari = [
+  ...fs.readdirSync(sunucu).filter((f) => f.endsWith('.js')).map((f) => path.join(sunucu, f)),
+  ...fs.readdirSync(path.join(kok, 'api')).filter((f) => f.endsWith('.js')).map((f) => path.join(kok, 'api', f))
+];
+const htmlDosyalari = fs.readdirSync(arayuz).filter((f) => f.endsWith('.html'));
 
 // 1) Sözdizimi
 for (const f of jsDosyalari) {
-  try { new vm.Script(fs.readFileSync(path.join(kok, f), 'utf8'), { filename: f }); }
-  catch (e) { hatalar.push(`${f}: ${e.message}`); }
+  try { new vm.Script(`(function(exports, require, module, __filename, __dirname){${fs.readFileSync(f, 'utf8')}\n})`, { filename: f }); }
+  catch (e) { hatalar.push(`${path.relative(kok, f)}: ${e.message}`); }
 }
 for (const f of htmlDosyalari) {
-  const html = fs.readFileSync(path.join(kok, f), 'utf8');
-  const bloklar = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
-  bloklar.forEach((kod, i) => {
-    try { new vm.Script(kod, { filename: `${f}#script${i}` }); }
+  const html = fs.readFileSync(path.join(arayuz, f), 'utf8');
+  [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].forEach((m, i) => {
+    try { new vm.Script(m[1], { filename: `${f}#script${i}` }); }
     catch (e) { hatalar.push(`${f} <script> #${i}: ${e.message}`); }
   });
 }
 
-// 2) Üst düzey yükleme, ters sırada da denenir
-const sunucuFonksiyonlari = new Set();
-for (const sira of [jsDosyalari, [...jsDosyalari].reverse()]) {
-  const ctx = vm.createContext({ console });
-  for (const f of sira) {
-    try { vm.runInContext(fs.readFileSync(path.join(kok, f), 'utf8'), ctx, { filename: f }); }
-    catch (e) { hatalar.push(`${f} üst düzeyde yüklenirken hata (sıra: ${sira[0]} ile başlayan): ${e.message}`); }
-  }
-  Object.keys(ctx).forEach((k) => { if (typeof ctx[k] === 'function') sunucuFonksiyonlari.add(k); });
-}
+// 2-3) İstemci → sunucu çağrıları ve izin listesi
+let API = {};
+try { API = require('../sunucu/uygulama').API; }
+catch (e) { hatalar.push('sunucu/uygulama.js yüklenemedi: ' + e.message); }
 
-// 3) İstemci → sunucu çağrıları
-const app = fs.readFileSync(path.join(kok, 'App.html'), 'utf8');
+const app = fs.readFileSync(path.join(arayuz, 'uygulama.html'), 'utf8');
 const cagrilar = new Set([...app.matchAll(/cagir\(\s*(?:sonra \? )?'(\w+)'(?:\s*:\s*'(\w+)')?/g)].flatMap((m) => [m[1], m[2]]).filter(Boolean));
 for (const ad of cagrilar) {
-  if (!sunucuFonksiyonlari.has(ad)) hatalar.push(`App.html "${ad}" çağırıyor ama sunucuda böyle bir fonksiyon yok.`);
-  if (ad.endsWith('_')) hatalar.push(`App.html "${ad}" çağırıyor; sonu _ ile biten fonksiyonlar istemciden çağrılamaz.`);
+  if (!Object.prototype.hasOwnProperty.call(API, ad)) hatalar.push(`uygulama.html "${ad}" çağırıyor ama sunucudaki izin listesinde (API) yok.`);
+}
+for (const [ad, fn] of Object.entries(API)) {
+  if (!ad.startsWith('api_')) hatalar.push(`API izin listesinde "${ad}" api_ ile başlamıyor.`);
+  if (typeof fn !== 'function' || fn.length < 1) hatalar.push(`"${ad}" ilk parametre olarak oturum e-postasını almalı.`);
 }
 
-// 4) include_ hedefleri
-for (const f of htmlDosyalari) {
-  const html = fs.readFileSync(path.join(kok, f), 'utf8');
-  for (const m of html.matchAll(/include_\('(\w+)'\)/g)) {
-    if (!htmlDosyalari.includes(m[1] + '.html')) hatalar.push(`${f}: include_('${m[1]}') için ${m[1]}.html yok.`);
-  }
+// 4) Şablon
+const sablon = fs.readFileSync(path.join(arayuz, 'index.html'), 'utf8');
+['{{STIL}}', '{{UYGULAMA}}'].forEach((y) => { if (!sablon.includes(y)) hatalar.push(`index.html'de ${y} yok.`); });
+
+// 5) Eski Google referansları
+const ESKI = /google\.script|SpreadsheetApp|LockService|PropertiesService|MailApp|DriveApp|HtmlService|ScriptApp|Session\.getActiveUser/;
+for (const f of [...jsDosyalari, ...htmlDosyalari.map((x) => path.join(arayuz, x))]) {
+  const metin = fs.readFileSync(f, 'utf8').split('\n').filter((s) => !/^\s*(\/\/|\*|\/\*)/.test(s)).join('\n');
+  if (ESKI.test(metin)) hatalar.push(`${path.relative(kok, f)} eski Google Apps Script API'sine başvuruyor.`);
 }
 
-// 5) İstemciye açık fonksiyonlar
-const ACIK_IZINLI = new Set(['doGet', 'kurulum', 'ornekVerileriYukle', 'gunlukSureKontrolu', 'gunlukSureKontroluCalistir']);
-for (const ad of sunucuFonksiyonlari) {
-  if (ad.endsWith('_') || ad.startsWith('api_') || ACIK_IZINLI.has(ad)) continue;
-  hatalar.push(`"${ad}" istemciden çağrılabilir. İç fonksiyonsa adının sonuna _ ekleyin; istemci içinse api_ ile başlatıp yetki kontrolü yapın.`);
-}
+// 6) vercel.json
+try {
+  const v = JSON.parse(fs.readFileSync(path.join(kok, 'vercel.json'), 'utf8'));
+  if (!(v.rewrites || []).some((r) => r.destination === '/api')) hatalar.push('vercel.json: tüm istekleri /api işlevine yönlendiren rewrite yok.');
+  if (!(v.crons || []).some((c) => c.path === '/api/cron/gunluk')) hatalar.push('vercel.json: gece görevi (cron) tanımlı değil.');
+  if (!v.functions || !v.functions['api/index.js']) hatalar.push('vercel.json: api/index.js işlev ayarı yok.');
+} catch (e) { hatalar.push('vercel.json okunamadı: ' + e.message); }
 
 if (hatalar.length) {
   console.error('Kontrol BAŞARISIZ:\n- ' + hatalar.join('\n- '));
   process.exit(1);
 }
-console.log(`Kontrol tamam: ${jsDosyalari.length} JS, ${htmlDosyalari.length} HTML dosyası; ${cagrilar.size} istemci çağrısının hepsi sunucuda tanımlı.`);
+console.log(`Kontrol tamam: ${jsDosyalari.length} JS, ${htmlDosyalari.length} HTML dosyası; ${cagrilar.size} istemci çağrısının hepsi izin listesinde (${Object.keys(API).length} işlev).`);

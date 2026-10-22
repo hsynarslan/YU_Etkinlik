@@ -8,7 +8,7 @@ Yaşar Üniversitesi kampüsünde yapılan etkinliklerin talep, onay ve hazırl�
 - EBYS onayı beklenirken mekânın başkasına verilmemesi için önce **ön rezervasyon** açılır.
 - EBYS onayı çıkınca **EBYS numarası ve onay yazısı (PDF)** girilerek süreç devam eder.
 - Üst düzey etkinlikler bazen EBYS onayı olmadan yapılır. Bu adımı yalnızca **yetkilendirilmiş birimler** kullanabilir; gerekçe zorunludur ve kayıt altına alınır.
-- Veri, Google Drive'daki bir **Google Sheets** tablosunda tutulur (Excel olarak indirilebilir).
+- Veri bir **PostgreSQL** veritabanında tutulur (Neon, Vercel üzerinden); tablolar CSV olarak dışa aktarılabilir.
 
 ## Ön rezervasyon
 

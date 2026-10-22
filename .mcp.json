@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "clasp": {
-      "command": "npx",
-      "args": ["clasp", "mcp"]
-    }
-  }
-}

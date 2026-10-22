@@ -1,8 +1,10 @@
-# Veri modeli (Google Sheets)
+# Veri modeli (PostgreSQL)
 
-Tek bir Google Sheets dosyası, yedi sayfa. Sütun başlıkları `apps-script/Config.js` > `HEADERS` ile birebir aynıdır. Tüm hücreler **düz metin** biçimindedir (tarih `YYYY-AA-GG`, saat `SS:DD`).
+Yedi tablo ve bir dosya tablosu. Sütun adları `sunucu/config.js` > `HEADERS` ile birebir aynıdır. Tüm sütunlar **metin** (`TEXT`) tipindedir (tarih `YYYY-AA-GG`, saat `SS:DD`, zaman `YYYY-AA-GGTSS:DD:SS`, İstanbul saati). Her tabloda ayrıca eklenme sırasını tutan `_sira` sütunu vardır.
 
-Kullanıcılar tabloya doğrudan erişmez; tablo yalnızca yöneticinin Drive'ındadır ve uygulama yöneticinin yetkisiyle yazar.
+Kullanıcılar veritabanına doğrudan erişmez; yalnızca sunucu bağlanır ve her işlemde oturumdaki kullanıcının yetkisini denetler.
+
+`Dosyalar` tablosu EBYS onay yazılarını (PDF) tutar: `DosyaID, EtkinlikID, Ad, Icerik (BYTEA), Boyut, YukleyenEposta, Zaman`.
 
 ## Etkinlikler
 
@@ -19,7 +21,7 @@ Kullanıcılar tabloya doğrudan erişmez; tablo yalnızca yöneticinin Drive'ı
 | ProtokolDuzeyi | `STANDART`, `DIS_KONUK`, `UST_DUZEY` |
 | OnRezBitis | Ön rezervasyonun son günü |
 | UzatmaSayisi | Kaç kez uzatıldı |
-| EbysNo, EbysTarih, EbysEkUrl | EBYS numarası, onay tarihi, Drive'daki PDF bağlantısı |
+| EbysNo, EbysTarih, EbysEkUrl | EBYS numarası, onay tarihi, PDF adresi (`/api/dosya/<DosyaID>`) |
 | EbysMuaf, MuafGerekce | `EVET`/`HAYIR` ve gerekçe |
 | KontrolNotu | Onaycının onay/iade notu |
 | Detay | Detaylı formun JSON hâli |
@@ -48,7 +50,7 @@ Kullanıcılar tabloya doğrudan erişmez; tablo yalnızca yöneticinin Drive'ı
 
 | Sütun | Açıklama |
 | --- | --- |
-| Eposta | Google hesabıyla birebir aynı, küçük harf |
+| Eposta | Google (üniversite) hesabıyla birebir aynı, küçük harf |
 | AdSoyad | |
 | Birim | BirimID |
 | Roller | Virgülle: `TALEP_EDEN, BIRIM_ONAYCI, HIZMET_BIRIMI, EBYS_MUAF, YONETICI` |
@@ -75,10 +77,10 @@ Her durum değişikliği ve önemli işlem: `Zaman`, `Eposta` (`sistem` = gece g
 
 ## Ayarlar
 
-`Anahtar`, `Deger`, `Aciklama`. Varsayılanlar `Config.js` > `VARSAYILAN_AYARLAR`; `kurulum()` eksik anahtarları ekler, var olanlara dokunmaz.
+`Anahtar`, `Deger`, `Aciklama`. Varsayılanlar `config.js` > `VARSAYILAN_AYARLAR`; `npm run kurulum` eksik anahtarları ekler, var olanlara dokunmaz.
 
 ## Sütun eklemek
 
-1. `Config.js` > `HEADERS` listesinin **sonuna** ekleyin (sırayı değiştirmeyin).
+1. `sunucu/config.js` > `HEADERS` listesinin **sonuna** ekleyin (sırayı değiştirmeyin).
 2. Bu dosyayı güncelleyin.
-3. Apps Script'te `kurulum()` çalıştırın; eksik başlık sona eklenir.
+3. Canlıda `npm run kurulum` çalıştırın; eksik sütun `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` ile eklenir, veriye dokunulmaz.

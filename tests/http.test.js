@@ -149,3 +149,48 @@ test('giriş formu: doğru şifre oturum çerezi verir, yanlış şifre girişe 
     assert.ok(o);
   } finally { await kapat(); }
 });
+
+test('/kurulum: anahtar yoksa kapalı, yanlış anahtar reddedilir, doğru anahtarla ilk yönetici şifreyle oluşur', async () => {
+  const { o, taban, kapat } = await sunucu();
+  const eski = process.env.KURULUM_ANAHTARI;
+  try {
+    delete process.env.KURULUM_ANAHTARI;
+    assert.equal((await fetch(taban + '/kurulum')).status, 404);
+    process.env.KURULUM_ANAHTARI = 'kisa';
+    assert.equal((await fetch(taban + '/kurulum')).status, 404, '16 karakterden kısa anahtar kabul edilmez');
+    process.env.KURULUM_ANAHTARI = 'kurulum-anahtari-1234567890';
+    const form = (a, eposta, ornek) => fetch(taban + '/kurulum', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(Object.assign({ anahtar: a, eposta }, ornek ? { ornek: 'evet' } : {})).toString() });
+    assert.equal((await fetch(taban + '/kurulum')).status, 200);
+    assert.equal((await form('yanlis-anahtar-1234567890', 'x@yasar.edu.tr')).status, 403);
+    assert.equal((await form('', 'x@yasar.edu.tr')).status, 403);
+
+    await o.db.sorgu('DELETE FROM "Kullanicilar"');
+    await o.db.sorgu('DELETE FROM "Mekanlar"');
+    const r = await form('kurulum-anahtari-1234567890', 'Ilk@Yasar.edu.tr', true);
+    const html = await r.text();
+    assert.equal(r.status, 200);
+    assert.match(html, /ilk@yasar\.edu\.tr/);
+    const sifreMetni = html.match(/Şifre: <b[^>]*>([^<]+)</)[1];
+    assert.equal(sifreMetni.length, 12);
+    assert.equal(await require('../sunucu/sifre').girisYap('ilk@yasar.edu.tr', sifreMetni), 'ilk@yasar.edu.tr');
+    assert.ok((await o.db.hepsi('Mekanlar')).some((m) => m.MekanID === 'ORNEK-KS'));
+
+    const ikinci = await (await form('kurulum-anahtari-1234567890', 'baska@yasar.edu.tr')).text();
+    assert.match(ikinci, /yeni yönetici eklenmedi/);
+    assert.ok(!ikinci.includes('baska@yasar.edu.tr'));
+  } finally {
+    if (eski === undefined) delete process.env.KURULUM_ANAHTARI; else process.env.KURULUM_ANAHTARI = eski;
+    await kapat();
+  }
+});
+
+test('kurulum öncesi giriş denemesi anlaşılır hata verir', async () => {
+  const { o, taban, kapat } = await sunucu();
+  try {
+    await o.db.sorgu('DROP SCHEMA public CASCADE');
+    await o.db.sorgu('CREATE SCHEMA public');
+    const r = await fetch(taban + '/giris', { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'eposta=a@b.co&sifre=x' });
+    assert.match(decodeURIComponent(r.headers.get('location')), /henüz kurulmamış/);
+  } finally { await kapat(); }
+});

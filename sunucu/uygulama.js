@@ -5,6 +5,7 @@
  *   GET  /                        arayüz (oturum yoksa giriş sayfası)
  *   GET  /giris, POST /giris        e-posta + şifre ile giriş
  *   GET  /giris/gelistirme, /cikis  (geliştirme girişi yalnızca yerelde)
+ *   GET/POST /kurulum             ilk kurulum sayfası (KURULUM_ANAHTARI ile; tablolar + ilk yönetici)
  *   POST /api/:fonksiyon          { args: [...] } → api_* fonksiyonları (oturumdaki kullanıcıyla)
  *   GET  /api/dosya/:id           EBYS onay yazısı (yetkili kullanıcılara)
  *   GET  /api/cron/gunluk         gece görevi (Vercel Cron, CRON_SECRET ile)
@@ -17,8 +18,10 @@ const express = require('express');
 const db = require('./db');
 const oturum = require('./oturum');
 const { SAYFA } = require('./config');
+const kurulumIslemleri = require('./kurulum');
 const sifre = require('./sifre');
 const hesap = require('./hesap');
+const yonetim = require('./yonetim');
 
 const rezervasyon = require('./rezervasyon');
 const ebys = require('./ebys');
@@ -31,7 +34,8 @@ const API = Object.assign({},
   pick(rezervasyon, ['api_onRezervasyonOlustur', 'api_uzat', 'api_iptal']),
   pick(ebys, ['api_ebysGonder', 'api_ebysKarar', 'api_ebysSonradanBagla']),
   pick(etkinlik, ['api_detayKaydet', 'api_gorevGuncelle', 'api_durumDegistir']),
-  pick(hesap, ['api_sifreDegistir'])
+  pick(hesap, ['api_sifreDegistir']),
+  pick(yonetim, ['api_yonetimVeri', 'api_kullaniciKaydet', 'api_sifreBelirle', 'api_mekanKaydet', 'api_birimKaydet', 'api_ayarKaydet'])
 );
 
 function pick(nesne, anahtarlar) {
@@ -98,7 +102,50 @@ function uygulamaOlustur() {
       oturum.oturumAc(req, res, eposta);
       res.redirect(303, '/');
     } catch (e) {
-      res.redirect(303, '/giris?hata=' + encodeURIComponent(e.message));
+      const kurulmamis = e && e.code === '42P01'; // tablo yok
+      res.redirect(303, '/giris?hata=' + encodeURIComponent(kurulmamis ? 'Sistem henüz kurulmamış. /kurulum sayfasını açın.' : e.message));
+    }
+  });
+
+  // --- İlk kurulum -----------------------------------------------------------
+  const kurulumAnahtari = () => process.env.KURULUM_ANAHTARI || '';
+  const kurulumSayfasi = (govde) => {
+    const stil = fs.readFileSync(path.join(arayuzKlasoru, 'stil.html'), 'utf8');
+    return `<!DOCTYPE html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Kurulum</title>${stil}</head><body>
+<header class="ust"><div class="marka"><span class="marka-ad">Etkinlik Yönetim Sistemi</span><span class="marka-alt">İlk kurulum</span></div></header>
+<main class="icerik" style="max-width:480px">${govde}</main></body></html>`;
+  };
+
+  app.get('/kurulum', (req, res) => {
+    if (kurulumAnahtari().length < 16) {
+      return res.status(404).type('html').send(kurulumSayfasi('<div class="hata-kutu">KURULUM_ANAHTARI tanımlı değil veya 16 karakterden kısa. Vercel ayarlarına ekleyip yeniden dağıtın (bkz. docs/kurulum.md).</div>'));
+    }
+    res.type('html').send(kurulumSayfasi(`<form method="post" action="/kurulum" class="kart" style="padding:20px">
+  <h2>İlk kurulum</h2>
+  <p class="meta">Veritabanı tablolarını ve varsayılan ayarları hazırlar, ilk yöneticiyi oluşturur. Tekrar çalıştırmak güvenlidir; var olan veriye dokunmaz.</p>
+  <label>Kurulum anahtarı (Vercel'deki KURULUM_ANAHTARI)<input name="anahtar" type="password" autocomplete="off" required></label>
+  <label>İlk yöneticinin e-postası<input name="eposta" type="email" autocomplete="off" required></label>
+  <label style="display:flex;flex-direction:row;gap:8px;align-items:center"><input name="ornek" type="checkbox" value="evet" style="width:auto"> Deneme için örnek mekân ve birim ekle</label>
+  <div class="eylemler"><button class="btn" type="submit">Kurulumu çalıştır</button></div>
+</form>`));
+  });
+
+  app.post('/kurulum', express.urlencoded({ extended: false, limit: '10kb' }), async (req, res) => {
+    const beklenen = kurulumAnahtari();
+    const gelen = String((req.body && req.body.anahtar) || '');
+    const esit = beklenen.length >= 16 && gelen.length === beklenen.length && crypto.timingSafeEqual(Buffer.from(gelen), Buffer.from(beklenen));
+    if (!esit) return res.status(403).type('html').send(kurulumSayfasi('<div class="hata-kutu">Kurulum anahtarı hatalı.</div><p><a href="/kurulum">Geri dön</a></p>'));
+    try {
+      const yonetici = await kurulumIslemleri.kurulum({ yonetici: req.body.eposta });
+      if (req.body.ornek === 'evet') await kurulumIslemleri.ornekVerileriYukle();
+      res.type('html').send(kurulumSayfasi(`<div class="kart" style="padding:20px"><h2>Kurulum tamam</h2>
+${yonetici
+    ? `<p>İlk yönetici oluşturuldu:</p><p><b>${esc(yonetici.eposta)}</b><br>Şifre: <b style="font-family:monospace;font-size:18px">${esc(yonetici.sifre)}</b></p><div class="uyari-kutu">Bu şifre yalnızca şimdi gösterilir. Not alın, girişte <b>Hesabım</b> sekmesinden değiştirin.</div>`
+    : '<p>Tablolar güncel. Sistemde zaten kullanıcı tanımlı olduğu için yeni yönetici eklenmedi.</p>'}
+<p><a href="/giris">Giriş sayfasına git</a></p></div>`));
+    } catch (e) {
+      console.error(e);
+      res.status(500).type('html').send(kurulumSayfasi(`<div class="hata-kutu">Kurulum başarısız: ${esc(e.message)}</div><p><a href="/kurulum">Geri dön</a></p>`));
     }
   });
 

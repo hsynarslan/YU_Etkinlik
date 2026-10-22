@@ -326,3 +326,88 @@ test('kurulum ilk yöneticiyi rastgele şifreyle oluşturur', async () => {
     assert.equal(await kurulum({ yonetici: 'baska@yasar.edu.tr' }), null, 'kullanıcı varsa yeni yönetici eklenmez');
   } finally { await kapat(); }
 });
+
+test('yönetim ekranı: yalnızca yönetici; kullanıcı, mekân, birim, ayar kaydı ve kendini kilitlemeyi önleme', async () => {
+  const sifre = require('../sunucu/sifre');
+  const { c, db, giris, kapat } = await ortam();
+  try {
+    giris('talep@yasar.edu.tr');
+    for (const [fn, ...args] of [['api_yonetimVeri'], ['api_kullaniciKaydet', {}], ['api_mekanKaydet', {}], ['api_birimKaydet', {}], ['api_ayarKaydet', 'MAX_UZATMA', '2'], ['api_sifreBelirle', 'onay@yasar.edu.tr', 'abcdefgh1']]) {
+      const r = await c[fn](...args);
+      assert.equal(r.ok, false, fn);
+      assert.match(r.mesaj, /yalnızca yöneticiler/, fn);
+    }
+
+    giris('kurucu@yasar.edu.tr');
+    let r = await c.api_yonetimVeri();
+    assert.equal(r.ok, true, r.mesaj);
+    assert.ok(r.kullanicilar.every((k) => !('SifreHash' in k)), 'şifre özeti istemciye gitmemeli');
+    assert.equal(r.kullanicilar.find((k) => k.Eposta === 'kurucu@yasar.edu.tr').sifreVar, true);
+    assert.equal(r.kullanicilar.find((k) => k.Eposta === 'talep@yasar.edu.tr').sifreVar, false);
+    assert.ok(r.ayarlar.some((a) => a.Anahtar === 'ON_REZ_SURE_GUN' && a.Deger === '10'));
+
+    // Yeni birim, mekân, kullanıcı
+    assert.equal((await c.api_birimKaydet({ BirimID: 'iibf', Ad: 'İİBF', Tur: 'AKADEMIK' })).ok, true);
+    assert.equal((await c.api_birimKaydet({ BirimID: 'IIBF', Ad: 'İktisadi ve İdari Bilimler', Tur: 'AKADEMIK' })).mesaj, 'Birim güncellendi.');
+    assert.equal((await c.api_birimKaydet({ BirimID: 'YENI', Ad: 'x', Tur: 'HIZMET' })).ok, false);
+    r = await c.api_mekanKaydet({ MekanID: 'iibf-a1', Ad: 'A1 Amfi', Bina: 'İİBF', Kapasite: '120', SorumluBirim: 'TEKNIK_ISLER', Aktif: 'EVET' });
+    assert.equal(r.ok, true, r.mesaj);
+    assert.equal((await c.api_mekanKaydet({ MekanID: 'X', Ad: 'x', Kapasite: '-3' })).ok, false);
+    r = await c.api_kullaniciKaydet({ Eposta: 'Yeni@Yasar.edu.tr', AdSoyad: 'Yeni Kişi', Birim: 'IIBF', Roller: ['TALEP_EDEN'], Aktif: 'EVET' });
+    assert.equal(r.ok, true, r.mesaj);
+    assert.equal(r.yeni, true);
+    assert.equal((await c.api_kullaniciKaydet({ Eposta: 'yeni@yasar.edu.tr', AdSoyad: 'Yeni Kişi', Birim: 'IIBF', Roller: ['TALEP_EDEN', 'EBYS_MUAF'] })).yeni, false);
+    assert.equal((await c.api_kullaniciKaydet({ Eposta: 'x@yasar.edu.tr', AdSoyad: 'x', Birim: 'YOKBIRIM', Roller: ['TALEP_EDEN'] })).ok, false);
+
+    // Şifre: verilen ve üretilen
+    r = await c.api_sifreBelirle('yeni@yasar.edu.tr', '');
+    assert.equal(r.ok, true);
+    assert.equal(r.sifre.length, 12);
+    assert.equal(await sifre.girisYap('yeni@yasar.edu.tr', r.sifre), 'yeni@yasar.edu.tr');
+    r = await c.api_sifreBelirle('yeni@yasar.edu.tr', 'ElleBelirlenen1');
+    assert.equal(r.sifre, '', 'elle verilen şifre geri gösterilmez');
+    assert.equal(await sifre.girisYap('yeni@yasar.edu.tr', 'ElleBelirlenen1'), 'yeni@yasar.edu.tr');
+    assert.match((await c.api_sifreBelirle('yeni@yasar.edu.tr', 'kisa')).mesaj, /en az 8/);
+    assert.equal((await c.api_sifreBelirle('yok@yasar.edu.tr', '')).ok, false);
+
+    // Yeni mekânda talep açılabilir
+    giris('yeni@yasar.edu.tr');
+    const ileri = require('../sunucu/logic').isGunuEkle(db.bugun(), 15);
+    r = await c.api_onRezervasyonOlustur({ ad: 'Deneme', tur: 'Panel', mekanId: 'IIBF-A1', tarih: ileri, baslangic: '10:00', bitis: '11:00', katilimciSayisi: '50' });
+    assert.equal(r.ok, true, r.mesaj);
+
+    // Ayar
+    giris('kurucu@yasar.edu.tr');
+    assert.equal((await c.api_ayarKaydet('MAX_UZATMA', '2')).ok, true);
+    assert.equal(await db.ayarSayi('MAX_UZATMA'), 2);
+    assert.equal((await c.api_ayarKaydet('MAX_UZATMA', 'x')).ok, false);
+    assert.equal((await c.api_ayarKaydet('YOK', '1')).ok, false);
+    assert.equal((await c.api_ayarKaydet('RESMI_TATILLER', '2026-10-29')).ok, true);
+
+    // Kendini kilitleme ve son yöneticiyi kaldırma engellenir
+    assert.match((await c.api_kullaniciKaydet({ Eposta: 'kurucu@yasar.edu.tr', AdSoyad: 'K', Birim: 'YONETIM', Roller: ['TALEP_EDEN'] })).mesaj, /Kendi yönetici/);
+    assert.match((await c.api_kullaniciKaydet({ Eposta: 'kurucu@yasar.edu.tr', AdSoyad: 'K', Birim: 'YONETIM', Roller: ['YONETICI'], Aktif: 'HAYIR' })).mesaj, /Kendi yönetici/);
+    await c.api_kullaniciKaydet({ Eposta: 'yeni@yasar.edu.tr', AdSoyad: 'Yeni Kişi', Birim: 'YONETIM', Roller: ['YONETICI'] });
+    giris('yeni@yasar.edu.tr');
+    assert.match((await c.api_kullaniciKaydet({ Eposta: 'kurucu@yasar.edu.tr', AdSoyad: 'K', Birim: 'YONETIM', Roller: ['TALEP_EDEN'] })).mesaj, /^(?!.*en az bir aktif)/, 'ikinci yönetici varken başka yöneticinin rolü alınabilir');
+    giris('kurucu@yasar.edu.tr');
+    const islemler = (await db.hepsi('Log')).map((l) => l.Islem);
+    ['YONETIM_BIRIM_EKLENDI', 'YONETIM_MEKAN_EKLENDI', 'YONETIM_KULLANICI_EKLENDI', 'YONETIM_SIFRE_BELIRLENDI', 'YONETIM_AYAR_GUNCELLENDI']
+      .forEach((x) => assert.ok(islemler.includes(x), x));
+  } finally { await kapat(); }
+});
+
+test('son aktif yönetici pasif yapılamaz', async () => {
+  const { c, db, giris, kapat } = await ortam();
+  try {
+    await c.api_yonetimVeri; // ortam hazır
+    // iki yönetici: kurucu ve yeni; yeni, kurucuyu pasif yapar, sonra kurucu tek yönetici kalmaz
+    giris('kurucu@yasar.edu.tr');
+    await c.api_kullaniciKaydet({ Eposta: 'ikinci@yasar.edu.tr', AdSoyad: 'İkinci', Birim: 'YONETIM', Roller: ['YONETICI'] });
+    giris('ikinci@yasar.edu.tr');
+    assert.equal((await c.api_kullaniciKaydet({ Eposta: 'kurucu@yasar.edu.tr', AdSoyad: 'K', Birim: 'YONETIM', Roller: ['YONETICI'], Aktif: 'HAYIR' })).ok, true);
+    // artık tek aktif yönetici ikinci; kendini kapatamaz (kendi kuralı) ve kurucu zaten pasif
+    assert.match((await c.api_kullaniciKaydet({ Eposta: 'ikinci@yasar.edu.tr', AdSoyad: 'İ', Birim: 'YONETIM', Roller: ['YONETICI'], Aktif: 'HAYIR' })).mesaj, /Kendi yönetici/);
+    assert.equal((await db.bul('Kullanicilar', 'Eposta', 'kurucu@yasar.edu.tr')).Aktif, 'HAYIR');
+  } finally { await kapat(); }
+});

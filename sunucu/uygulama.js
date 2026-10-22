@@ -3,7 +3,8 @@
  *
  * Adresler:
  *   GET  /                        arayüz (oturum yoksa giriş sayfası)
- *   GET  /giris, /giris/google/donus, /giris/gelistirme, /cikis
+ *   GET  /giris, POST /giris        e-posta + şifre ile giriş
+ *   GET  /giris/gelistirme, /cikis  (geliştirme girişi yalnızca yerelde)
  *   POST /api/:fonksiyon          { args: [...] } → api_* fonksiyonları (oturumdaki kullanıcıyla)
  *   GET  /api/dosya/:id           EBYS onay yazısı (yetkili kullanıcılara)
  *   GET  /api/cron/gunluk         gece görevi (Vercel Cron, CRON_SECRET ile)
@@ -16,6 +17,8 @@ const express = require('express');
 const db = require('./db');
 const oturum = require('./oturum');
 const { SAYFA } = require('./config');
+const sifre = require('./sifre');
+const hesap = require('./hesap');
 
 const rezervasyon = require('./rezervasyon');
 const ebys = require('./ebys');
@@ -27,7 +30,8 @@ const API = Object.assign({},
   { api_baslangic: apiBaslangic.api_baslangic },
   pick(rezervasyon, ['api_onRezervasyonOlustur', 'api_uzat', 'api_iptal']),
   pick(ebys, ['api_ebysGonder', 'api_ebysKarar', 'api_ebysSonradanBagla']),
-  pick(etkinlik, ['api_detayKaydet', 'api_gorevGuncelle', 'api_durumDegistir'])
+  pick(etkinlik, ['api_detayKaydet', 'api_gorevGuncelle', 'api_durumDegistir']),
+  pick(hesap, ['api_sifreDegistir'])
 );
 
 function pick(nesne, anahtarlar) {
@@ -51,17 +55,20 @@ const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&':
 
 function girisSayfasi(mesaj) {
   const stil = fs.readFileSync(path.join(arayuzKlasoru, 'stil.html'), 'utf8');
-  const google = oturum.googleAyarli();
   const gelistirme = oturum.gelistirmeGirisiAcik();
   return `<!DOCTYPE html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Giriş — Etkinlik Yönetim Sistemi</title>${stil}</head><body>
 <header class="ust"><div class="marka"><span class="marka-ad">Etkinlik Yönetim Sistemi</span><span class="marka-alt">Yaşar Üniversitesi</span></div></header>
 <main class="icerik" style="max-width:420px">
 ${mesaj ? `<div class="hata-kutu">${esc(mesaj)}</div>` : ''}
-<h2>Giriş</h2>
-${google ? '<p><a class="btn" href="/giris/google" style="display:inline-block;text-decoration:none">Google ile giriş yap</a></p><p class="meta">Üniversite (@yasar.edu.tr) hesabınızı kullanın.</p>' : ''}
+<form method="post" action="/giris" class="kart" style="padding:20px">
+  <h2>Giriş</h2>
+  <label>E-posta<input name="eposta" type="email" autocomplete="username" required autofocus></label>
+  <label>Şifre<input name="sifre" type="password" autocomplete="current-password" required></label>
+  <div class="eylemler"><button class="btn" type="submit">Giriş yap</button></div>
+  <p class="meta">Hesabınız yoksa veya şifrenizi unuttuysanız sistem yöneticisine başvurun.</p>
+</form>
 ${gelistirme ? '<p><a href="/giris/gelistirme">Geliştirme girişi (yalnızca yerel)</a></p>' : ''}
-${!google && !gelistirme ? '<div class="hata-kutu">Giriş yöntemi tanımlı değil. GOOGLE_CLIENT_ID ve GOOGLE_CLIENT_SECRET ayarlarını ekleyin (bkz. docs/kurulum.md).</div>' : ''}
 </main></body></html>`;
 }
 
@@ -85,26 +92,13 @@ function uygulamaOlustur() {
   // --- Giriş ---------------------------------------------------------------
   app.get('/giris', (req, res) => res.type('html').send(girisSayfasi(req.query.hata)));
 
-  app.get('/giris/google', async (req, res) => {
-    if (!oturum.googleAyarli()) return res.redirect('/giris');
+  app.post('/giris', express.urlencoded({ extended: false, limit: '10kb' }), async (req, res) => {
     try {
-      oturum.googleBaslat(req, res, String(await db.ayar('IZINLI_ALAN_ADI') || '').toLowerCase().trim());
-    } catch (e) {
-      console.error(e);
-      res.redirect('/giris?hata=' + encodeURIComponent(e.message));
-    }
-  });
-
-  app.get('/giris/google/donus', async (req, res) => {
-    try {
-      const alan = String(await db.ayar('IZINLI_ALAN_ADI') || '').toLowerCase().trim();
-      const eposta = await oturum.googleDonus(req, res, alan);
-      await require('./auth').kullaniciBul(eposta); // tanımsız kullanıcı oturum açamaz
+      const eposta = await sifre.girisYap(req.body && req.body.eposta, req.body && req.body.sifre);
       oturum.oturumAc(req, res, eposta);
-      res.redirect('/');
+      res.redirect(303, '/');
     } catch (e) {
-      console.error(e);
-      res.redirect('/giris?hata=' + encodeURIComponent(e.message));
+      res.redirect(303, '/giris?hata=' + encodeURIComponent(e.message));
     }
   });
 

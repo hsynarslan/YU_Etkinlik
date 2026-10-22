@@ -8,7 +8,8 @@ const { kurulum, ornekVerileriYukle } = require('./kurulum');
 const { uygulamaOlustur } = require('./uygulama');
 
 (async () => {
-  await kurulum({ yonetici: process.env.ILK_YONETICI_EPOSTA || 'yonetici@yasar.edu.tr' });
+  const yonetici = await kurulum({ yonetici: process.env.ILK_YONETICI_EPOSTA || 'yonetici@yasar.edu.tr' });
+  if (yonetici) console.log(`İlk yönetici: ${yonetici.eposta}  şifre: ${yonetici.sifre}  (ya da giriş sayfasındaki geliştirme girişi)`);
   if (process.env.ORNEK_VERI !== 'HAYIR') await ornekVerileriYukle();
   const port = Number(process.env.PORT) || 3000;
   uygulamaOlustur().listen(port, () => {

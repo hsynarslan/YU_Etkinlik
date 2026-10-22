@@ -1,9 +1,8 @@
 /**
- * oturum.js — Giriş ve oturum çerezi.
+ * oturum.js — Oturum çerezi.
  *
- * Canlıda: "Google ile giriş" (OpenID Connect). Yalnızca IZINLI_ALAN_ADI alanındaki, doğrulanmış
- * e-postalar kabul edilir; ayrıca kullanıcının Kullanicilar tablosunda tanımlı olması gerekir.
- * Yerelde: GELISTIRME_GIRISI=EVET ise listeden kullanıcı seçilerek girilir (Vercel'de asla açılmaz).
+ * Giriş e-posta + şifre ile yapılır (bkz. sifre.js); başarılı girişte bu dosyadaki oturumAc() çerezi verir.
+ * Yerelde: GELISTIRME_GIRISI=EVET ise şifresiz, listeden kullanıcı seçilerek girilir (Vercel'de asla açılmaz).
  *
  * Oturum, HMAC ile imzalanmış bir çerezdir (OTURUM_SIRRI ile). Sunucuda oturum verisi tutulmaz.
  */
@@ -76,63 +75,4 @@ function gelistirmeGirisiAcik() {
   return process.env.GELISTIRME_GIRISI === 'EVET' && !process.env.VERCEL;
 }
 
-function googleAyarli() {
-  return !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
-}
-
-function adres(req) {
-  if (process.env.UYGULAMA_URL) return process.env.UYGULAMA_URL.replace(/\/+$/, '');
-  const proto = req.headers['x-forwarded-proto'] || req.protocol;
-  return proto + '://' + req.headers.host;
-}
-
-/** Google yönlendirmesi için adres ve CSRF koruması (state) üretir. */
-function googleBaslat(req, res, izinliAlan) {
-  const state = crypto.randomBytes(16).toString('hex');
-  cerezYaz(res, req, 'gstate', imzala({ s: state, son: Math.floor(Date.now() / 1000) + 600 }), 600);
-  const p = new URLSearchParams({
-    client_id: process.env.GOOGLE_CLIENT_ID,
-    redirect_uri: adres(req) + '/giris/google/donus',
-    response_type: 'code',
-    scope: 'openid email',
-    state,
-    prompt: 'select_account'
-  });
-  if (izinliAlan) p.set('hd', izinliAlan);
-  res.redirect('https://accounts.google.com/o/oauth2/v2/auth?' + p.toString());
-}
-
-/** Google'dan dönen kodu doğrular, doğrulanmış e-postayı döndürür. */
-async function googleDonus(req, res, izinliAlan) {
-  const kayitli = dogrula(cerezOku(req, 'gstate'));
-  cerezYaz(res, req, 'gstate', '', 0);
-  if (!kayitli || !req.query.state || kayitli.s !== req.query.state) throw new Error('Giriş isteği geçersiz veya süresi dolmuş. Lütfen tekrar deneyin.');
-  if (!req.query.code) throw new Error('Google girişi tamamlanmadı.');
-  const yanit = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      code: String(req.query.code),
-      client_id: process.env.GOOGLE_CLIENT_ID,
-      client_secret: process.env.GOOGLE_CLIENT_SECRET,
-      redirect_uri: adres(req) + '/giris/google/donus',
-      grant_type: 'authorization_code'
-    })
-  });
-  if (!yanit.ok) throw new Error('Google girişi doğrulanamadı.');
-  const { id_token: idToken } = await yanit.json();
-  // Jeton, Google'dan doğrudan TLS üzerinden alındığı için imza ayrıca doğrulanmaz (OIDC §3.1.3.7).
-  const yuk = JSON.parse(Buffer.from(String(idToken).split('.')[1], 'base64url').toString('utf8'));
-  if (yuk.aud !== process.env.GOOGLE_CLIENT_ID || !/^https:\/\/accounts\.google\.com$|^accounts\.google\.com$/.test(yuk.iss)) {
-    throw new Error('Google girişi doğrulanamadı.');
-  }
-  const eposta = String(yuk.email || '').toLowerCase();
-  if (!eposta || yuk.email_verified !== true) throw new Error('Google hesabının e-postası doğrulanmamış.');
-  if (izinliAlan && eposta.split('@')[1] !== izinliAlan) throw new Error('Yalnızca @' + izinliAlan + ' hesapları sisteme giriş yapabilir.');
-  return eposta;
-}
-
-module.exports = {
-  oturumAc, oturumKapat, oturumEposta, gelistirmeGirisiAcik, googleAyarli, googleBaslat, googleDonus,
-  imzala, dogrula
-};
+module.exports = { oturumAc, oturumKapat, oturumEposta, gelistirmeGirisiAcik, imzala, dogrula };

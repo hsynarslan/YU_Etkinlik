@@ -21,7 +21,7 @@ npm run dogrula      # testler + statik kontrol
 npm run onizleme     # onizleme/index.html dosyasını tarayıcıda açın
 ```
 
-Canlıya alma (Vercel + Neon + Google ile giriş): [docs/kurulum.md](docs/kurulum.md)
+Canlıya alma (Vercel + Neon): [docs/kurulum.md](docs/kurulum.md)
 
 ## Claude Code ile çalışma
 

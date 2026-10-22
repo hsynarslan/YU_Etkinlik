@@ -9,7 +9,7 @@ Kampüste yapılacak etkinliklerin talep → EBYS onayı → hizmet birimi hazı
 - **Sunucu:** Node.js + Express (`sunucu/`); Vercel'de tek bir sunucusuz işlev (`api/index.js`), yerelde `npm run dev`
 - **Veri tabanı:** PostgreSQL (canlıda Neon; yerelde ve testlerde PGlite = bellekte/diskte gerçek PostgreSQL)
 - **Arayüz:** Tek sayfa, vanilla JS (`sunucu/arayuz/`)
-- **Giriş:** Google ile giriş (yalnızca `IZINLI_ALAN_ADI` alanı + Kullanicilar tablosunda tanımlı olmak); yerelde geliştirme girişi
+- **Giriş:** E-posta + şifre; kullanıcıları ve şifreleri yönetici tanımlar (`npm run sifre`), 5 hatalı denemede 15 dk kilit; yerelde şifresiz geliştirme girişi
 - **Zamanlanmış iş:** Vercel Cron → `/api/cron/gunluk` (her gece 02:00 İstanbul)
 - **Dil:** Kod tanımlayıcıları, arayüz ve dokümanlar Türkçe (ASCII tanımlayıcı: `Etkinlik`, `onayBirimleri`)
 
@@ -21,7 +21,7 @@ Kampüste yapılacak etkinliklerin talep → EBYS onayı → hizmet birimi hazı
 | `docs/is-akisi.md` | Durumlar, geçişler, gece görevi |
 | `docs/veri-modeli.md` | Tablolar ve sütunlar |
 | `docs/roller-yetkiler.md` | Roller ve işlem bazlı yetkiler |
-| `docs/kurulum.md` | Yerel çalıştırma, Vercel/Neon/Google kurulumu |
+| `docs/kurulum.md` | Yerel çalıştırma, Vercel/Neon kurulumu |
 
 ## Komutlar
 
@@ -48,7 +48,9 @@ sunucu/
   config.js       Tablo adları, HEADERS (sütunlar), VARSAYILAN_AYARLAR, etkinlik türleri
   db.js           PostgreSQL: hepsi/bul/ekle/guncelle, kilitle() (işlem + kilit), ayar(), logYaz(), bugun()/simdi()
   auth.js         aktifKullanici(eposta), yetkiGerekli(), rol/birime göre e-posta listeleri
-  oturum.js       İmzalı oturum çerezi, Google OIDC, geliştirme girişi
+  oturum.js       İmzalı oturum çerezi, geliştirme girişi
+  sifre.js        Şifre özetleme (scrypt), girişYap (kilitli), şifre belirleme
+  hesap.js        api_sifreDegistir
   bildirim.js     E-posta (Resend; anahtar yoksa günlüğe yazar; BILDIRIM_AKTIF=HAYIR ise sessiz)
   rezervasyon.js  Ön rezervasyon, uzatma, iptal, yedek terfisi, gunlukSureKontrolu
   ebys.js         EBYS no + PDF (Dosyalar tablosu), onaycı kararı, muaf etkinliğe sonradan EBYS bağlama
@@ -74,7 +76,7 @@ data/             *.ornek.csv (gerçek listeler .gitignore'da)
 5. **Hücreler düz metin (TEXT).** Tarih `YYYY-AA-GG`, saat `SS:DD`, zaman `YYYY-AA-GGTSS:DD:SS` (Europe/Istanbul).
 6. **Sütun eklerken** `HEADERS` listesinin sonuna ekleyin, sırayı bozmayın, `docs/veri-modeli.md`'yi güncelleyin; canlıda `npm run kurulum` çalıştırılmalı.
 7. **Arayüz metinleri Türkçe**, kullanıcıya gösterilen her şey `esc()` ile kaçırılır.
-8. **Kişisel veri (KVKK):** Gerçek kullanıcı listeleri, e-postalar, gizli anahtarlar (`DATABASE_URL`, `OTURUM_SIRRI`, `GOOGLE_CLIENT_SECRET`…) repoya girmez (`data/*.csv`, `.env*` yok sayılır). Test ve önizlemede yalnızca örnek veri.
+8. **Kişisel veri (KVKK):** Gerçek kullanıcı listeleri, e-postalar, gizli anahtarlar (`DATABASE_URL`, `OTURUM_SIRRI`, `RESEND_API_KEY`, üretilen şifreler…) repoya girmez (`data/*.csv`, `.env*` yok sayılır). Test ve önizlemede yalnızca örnek veri.
 9. **Vercel sınırları:** diske kalıcı yazılmaz (dosyalar veritabanına), istek gövdesi en fazla 4,5 MB (PDF 3 MB), işlev kısa ömürlüdür (bellekte durum tutulmaz).
 10. Değişiklikten sonra `npm run dogrula`; arayüz değiştiyse `npm run onizleme` veya `npm run dev` ile bakın.
 
@@ -88,7 +90,7 @@ data/             *.ornek.csv (gerçek listeler .gitignore'da)
 ## Açık sorular (kullanıcıdan bekleniyor)
 
 - [ ] Etkinlik talebi açabilecek / onaylayabilecek **kullanıcı listesi** (gelince `/kullanici-ekle`)
-- [ ] Personelin tamamı `@yasar.edu.tr` Google hesabıyla mı giriş yapıyor? (Değilse `IZINLI_ALAN_ADI` ayarı ve giriş yöntemi değişir)
+- [ ] Şifremi unuttum akışı gerekir mi? (Şimdilik yönetici `npm run sifre` ile yeniden belirler)
 - [ ] Gerçek **EBYS numarası biçimi** (`EBYS_NO_REGEX`)
 - [ ] Gerçek **mekân listesi** ve kapasiteler; akademik/idari **birim kodları**
 - [ ] Ön rezervasyon süresi (varsayılan 10 iş günü) EBYS onayının gerçek süresine uygun mu?

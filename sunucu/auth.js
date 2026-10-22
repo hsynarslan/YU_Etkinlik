@@ -1,8 +1,8 @@
 /**
  * auth.js — Oturumdaki kullanıcıyı tanıma ve yetki kontrolü.
  *
- * Giriş "Google ile giriş" ile yapılır (bkz. oturum.js). Oturum çerezinden gelen e-posta
- * IZINLI_ALAN_ADI alanında olmalı ve Kullanicilar tablosunda aktif bir kayıt bulunmalıdır.
+ * Giriş e-posta + şifre ile yapılır (bkz. sifre.js, oturum.js). Oturum çerezinden gelen e-posta
+ * Kullanicilar tablosunda aktif bir kayıt olmalıdır; kullanıcıları yönetici tanımlar.
  */
 const Logic = require('./logic');
 const { SAYFA } = require('./config');
@@ -11,10 +11,6 @@ const db = require('./db');
 async function aktifKullanici(eposta) {
   eposta = String(eposta || '').toLowerCase().trim();
   if (!eposta) throw new Error('Oturum bulunamadı. Lütfen yeniden giriş yapın.');
-  const alan = String((await db.ayar('IZINLI_ALAN_ADI')) || '').toLowerCase().trim();
-  if (alan && eposta.split('@')[1] !== alan) {
-    throw new Error('Yalnızca @' + alan + ' hesapları sisteme giriş yapabilir.');
-  }
   return kullaniciBul(eposta);
 }
 

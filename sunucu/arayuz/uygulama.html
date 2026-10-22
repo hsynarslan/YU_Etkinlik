@@ -117,6 +117,7 @@
     if (rol('HIZMET_BIRIMI') || rol('YONETICI')) t.push(['gorevler', 'Görevlerim', S.v.gorevlerim.filter((g) => g.Durum === 'BEKLIYOR').length]);
     t.push(['takvim', 'Takvim']);
     if (rol('YONETICI')) t.push(['yonetim', 'Yönetim']);
+    t.push(['hesap', 'Hesabım']);
     return t;
   }
 
@@ -130,7 +131,7 @@
     $('#sekmeler').innerHTML = sekmeler.map(([id, ad, n]) =>
       `<button data-sekme="${id}" ${S.sekme === id ? 'aria-current="page"' : ''}>${esc(ad)}${n ? `<span class="sayac">${n}</span>` : ''}</button>`).join('');
 
-    const ciziciler = { yeni: yeniTalep, taleplerim, onay: onayBekleyenler, gorevler: gorevlerim, takvim, yonetim };
+    const ciziciler = { yeni: yeniTalep, taleplerim, onay: onayBekleyenler, gorevler: gorevlerim, takvim, yonetim, hesap };
     $('#icerik').innerHTML = ciziciler[S.sekme]();
   }
 
@@ -400,6 +401,22 @@
       </article>`).join('');
   }
 
+  // --- Hesabım ----------------------------------------------------------------
+
+  function hesap() {
+    const k = S.v.kullanici;
+    return `<div class="kart" style="max-width:480px">
+      <h2>Hesabım</h2>
+      <p class="meta">${esc(k.adSoyad)} · ${esc(k.eposta)}</p>
+      <form id="f-sifre">
+        <label>Mevcut şifre<input name="eski" type="password" autocomplete="current-password" required></label>
+        <label>Yeni şifre (en az 8 karakter)<input name="yeni" type="password" autocomplete="new-password" minlength="8" required></label>
+        <label>Yeni şifre (tekrar)<input name="yeni2" type="password" autocomplete="new-password" minlength="8" required></label>
+        <div class="eylemler"><button class="btn" type="submit">Şifreyi değiştir</button></div>
+      </form>
+    </div>`;
+  }
+
   // --- Takvim -----------------------------------------------------------------
 
   function takvim() {
@@ -505,6 +522,14 @@
     ev.preventDefault();
     const buton = form.querySelector('button[type="submit"]');
     if (form.id === 'f-yeni') return yeniTalepGonder(form, buton);
+    if (form.id === 'f-sifre') {
+      if (form.yeni.value !== form.yeni2.value) return toast('Yeni şifreler aynı değil.', true);
+      return islem(buton, async () => {
+        const r = await cagir('api_sifreDegistir', form.eski.value, form.yeni.value);
+        form.reset();
+        return r;
+      });
+    }
 
     const id = form.dataset.id;
     if (form.classList.contains('f-ebys') || form.classList.contains('f-ebys-sonra')) {

@@ -117,3 +117,35 @@ test('ana sayfa oturumlu kullanıcıya arayüzü verir', async () => {
     assert.ok(!/google\.script/.test(html));
   } finally { await kapat(); }
 });
+
+test('giriş formu: doğru şifre oturum çerezi verir, yanlış şifre girişe döner', async () => {
+  const sifre = require('../sunucu/sifre');
+  const { o, taban, kapat } = await sunucu();
+  try {
+    await sifre.sifreBelirle('talep@yasar.edu.tr', 'GucluSifre123');
+    const gonder = (eposta, s) => fetch(taban + '/giris', {
+      method: 'POST', redirect: 'manual',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ eposta, sifre: s }).toString()
+    });
+    const kotu = await gonder('talep@yasar.edu.tr', 'yanlis');
+    assert.equal(kotu.status, 303);
+    assert.match(decodeURIComponent(kotu.headers.get('location')), /^\/giris\?hata=E-posta veya şifre hatalı/);
+    assert.equal(kotu.headers.get('set-cookie'), null);
+
+    const iyi = await gonder('talep@yasar.edu.tr', 'GucluSifre123');
+    assert.equal(iyi.status, 303);
+    assert.equal(iyi.headers.get('location'), '/');
+    const ck = iyi.headers.get('set-cookie');
+    assert.match(ck, /HttpOnly/);
+    assert.match(ck, /SameSite=Lax/);
+    const j = await (await fetch(taban + '/api/api_baslangic', { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: ck.split(';')[0] }, body: '{}' })).json();
+    assert.equal(j.ok, true);
+    assert.equal(j.kullanici.eposta, 'talep@yasar.edu.tr');
+
+    const sayfa = await (await fetch(taban + '/giris')).text();
+    assert.match(sayfa, /name="sifre" type="password"/);
+    assert.ok(!/google/i.test(sayfa));
+    assert.ok(o);
+  } finally { await kapat(); }
+});

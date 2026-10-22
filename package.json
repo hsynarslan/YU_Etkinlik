@@ -14,7 +14,8 @@
     "gece-gorevi": "node sunucu/komut.js gece-gorevi",
     "aktar": "node sunucu/komut.js aktar",
     "onizleme": "node tools/onizleme.js",
-    "kullanici-kontrol": "node tools/kullanici-kontrol.js"
+    "kullanici-kontrol": "node tools/kullanici-kontrol.js",
+    "sifre": "node sunucu/komut.js sifre"
   },
   "engines": {
     "node": ">=22"

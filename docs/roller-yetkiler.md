@@ -23,9 +23,11 @@ Yetkiler kişiye değil **role** bağlıdır. Bir kişinin birden fazla rolü ol
 
 ## Giriş
 
-- Yalnızca `IZINLI_ALAN_ADI` (varsayılan `yasar.edu.tr`) hesapları girebilir.
-- Kullanicilar sayfasında olmayan veya `Aktif = HAYIR` olan kişi giremez.
-- `kurulum()` çalıştıran kişi, liste boşsa otomatik `YONETICI` olarak eklenir.
+- Giriş e-posta + şifreyle yapılır. Kullanıcıları ve şifrelerini yönetici tanımlar; kendi kendine kayıt yoktur.
+- Kullanicilar tablosunda olmayan, şifresi belirlenmemiş veya `Aktif = HAYIR` olan kişi giremez.
+- 5 hatalı denemeden sonra hesap 15 dakika kilitlenir.
+- Şifreler tuzlanıp özetlenerek saklanır (düz şifre tutulmaz). Yönetici şifreyi `npm run sifre` ile belirler; kullanıcı Hesabım sekmesinden değiştirebilir.
+- `npm run kurulum`, liste boşsa `ILK_YONETICI_EPOSTA` adresini `YONETICI` olarak ekler ve rastgele şifresini bir kez yazar.
 
 ## Kullanıcı listesi
 
@@ -33,6 +35,6 @@ Etkinlik talebi açabilecek ve onaylayabilecek kullanıcı listesi üniversitede
 
 1. `data/kullanicilar.ornek.csv` biçiminde hazırlayın.
 2. `npm run kullanici-kontrol -- data/kullanicilar.csv` ile denetleyin.
-3. `data/kullanicilar.csv` olarak kaydedip `npm run aktar -- data` ile veritabanına yükleyin (`DATABASE_URL` tanımlı olmalı; var olan e-postalar atlanır). Tek kullanıcı eklemek/değiştirmek için Neon panelindeki SQL editörünü kullanabilirsiniz.
+3. `data/kullanicilar.csv` olarak kaydedip `npm run aktar -- data` ile veritabanına yükleyin (`DATABASE_URL` tanımlı olmalı; var olan e-postalar atlanır), ardından `npm run sifre -- --hepsi` ile şifresi olmayan herkese rastgele şifre üretip listeyi her kullanıcıya ayrı ayrı iletin. Tek kullanıcı eklemek/değiştirmek için Neon panelindeki SQL editörünü kullanabilirsiniz.
 
 Claude Code'da `/kullanici-ekle` komutu bu adımları sizin için yürütür.

@@ -1,8 +1,8 @@
 /**
  * Logic.js — Saf iş kuralları.
  *
- * Bu dosya Google Apps Script API'lerine (SpreadsheetApp, Session vb.) ERİŞMEZ.
- * Böylece hem Apps Script içinde hem de Node.js testlerinde aynen çalışır.
+ * Bu dosya veritabanına, ağa veya saate ERİŞMEZ; her şey parametreyle gelir.
+ * Böylece sunucuda ve testlerde aynen çalışır.
  * Tüm sabitler (durumlar, roller) burada tanımlıdır; diğer dosyalar bunlara
  * yalnızca fonksiyonların İÇİNDEN `Logic.DURUM.X` şeklinde erişir.
  */
@@ -431,7 +431,7 @@ var Logic = (function () {
   };
 })();
 
-// Node.js testleri için. Apps Script'te `module` tanımlı değildir, bu satır atlanır.
+// Node.js (sunucu ve testler) için.
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = Logic;
 }

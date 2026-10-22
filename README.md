@@ -1,6 +1,6 @@
 # Yaşar Üniversitesi Etkinlik Yönetim Sistemi
 
-Kampüs etkinliklerinin ön rezervasyon, EBYS onayı, hizmet birimi hazırlığı ve takvim sürecini yöneten web uygulaması. Google Apps Script ile çalışır, veriyi Google Drive'daki bir Google Sheets tablosunda tutar.
+Kampüs etkinliklerinin ön rezervasyon, EBYS onayı, hizmet birimi hazırlığı ve takvim sürecini yöneten web uygulaması. Node.js (Express) ile yazılmıştır, Vercel'de çalışır ve veriyi PostgreSQL veritabanında tutar.
 
 ## Akış
 
@@ -16,11 +16,12 @@ Süresi dolan ön rezervasyonlar her gece otomatik düşer, sıradaki yedek terf
 
 ```bash
 npm install
+npm run dev          # http://localhost:3000, hesap veya ayar gerekmez (yerel veritabanı + örnek veri)
 npm run dogrula      # testler + statik kontrol
 npm run onizleme     # onizleme/index.html dosyasını tarayıcıda açın
 ```
 
-Google'a kurulum ve yayınlama: [docs/kurulum.md](docs/kurulum.md)
+Canlıya alma (Vercel + Neon + Google ile giriş): [docs/kurulum.md](docs/kurulum.md)
 
 ## Claude Code ile çalışma
 
@@ -28,17 +29,16 @@ Klasörü Claude Code'da açın; `CLAUDE.md` proje bağlamını ve kuralları ve
 
 - `/kullanici-ekle <liste>` — üniversiteden gelen kullanıcı listesini hazırlar ve denetler
 - `/yeni-alan <alan>` — forma alan ekler (kural, arayüz, test, doküman)
-- `/yayinla <sürüm>` — test eder, push eder, dağıtımı günceller
-
-`.mcp.json` içindeki `clasp` MCP sunucusu, Claude Code'un Apps Script projesiyle doğrudan çalışmasını sağlar (ilk açılışta onay ister).
+- `/yayinla <sürüm>` — test eder, sürümü günceller, Vercel'e yayınlar
 
 ## Klasörler
 
 | Klasör | İçerik |
 | --- | --- |
-| `apps-script/` | Apps Script kaynak kodu (clasp `rootDir`) |
+| `sunucu/` | Sunucu kodu, iş kuralları ve arayüz (`sunucu/arayuz/`) |
+| `api/` | Vercel giriş noktası |
 | `docs/` | Gereksinimler, iş akışı, veri modeli, roller, kurulum |
-| `tests/` | Node testleri ve sahte Google servisleri |
+| `tests/` | Node testleri (bellekte PostgreSQL ile) |
 | `tools/` | Statik kontrol, önizleme, kullanıcı listesi denetimi |
 | `data/` | Örnek CSV'ler (gerçek listeler repoya girmez) |
 

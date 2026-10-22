@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Kullanıcı listesini Google Sheets'e yüklemeden önce denetler.
+ * Kullanıcı listesini veritabanına yüklemeden (npm run aktar) önce denetler.
  * Kullanım: npm run kullanici-kontrol -- data/kullanicilar.csv [--birimler data/birimler.csv]
  *
  * Beklenen başlık: Eposta,AdSoyad,Birim,Roller,OnayBirimleri,Aktif

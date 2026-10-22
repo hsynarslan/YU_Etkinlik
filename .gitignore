@@ -1,9 +1,15 @@
 node_modules/
 onizleme/
-.clasprc.json
 *.log
 .DS_Store
 
 # Gerçek kişisel veriler repoya girmesin (KVKK). Örnek dosyalar *.ornek.csv adıyla tutulur.
 data/*.csv
 !data/*.ornek.csv
+
+# Yerel veritabanı, ortam değişkenleri, Vercel
+data/yerel-veritabani/
+.env
+.env.*
+!.env.example
+.vercel/

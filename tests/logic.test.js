@@ -1,7 +1,7 @@
 // Saf iş kuralları testleri. Çalıştırma: npm test
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const Logic = require('../apps-script/Logic.js');
+const Logic = require('../sunucu/logic.js');
 
 const D = Logic.DURUM;
 

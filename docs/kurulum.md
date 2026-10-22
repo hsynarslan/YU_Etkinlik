@@ -1,58 +1,85 @@
-# Kurulum ve yayınlama
+# Kurulum ve yayınlama (Vercel)
 
-## Önemli: hangi hesapla?
+Uygulama Vercel'de çalışır; veriler Neon'daki bir PostgreSQL veritabanında tutulur. Önce kendi bilgisayarınızda deneyebilirsiniz, hesap gerekmez.
 
-Web uygulaması **üniversitenin Google Workspace hesabıyla** (ör. `@yasar.edu.tr`) oluşturulup yayınlanmalıdır. `appsscript.json` içindeki `"access": "DOMAIN"` ayarı yalnızca Workspace hesaplarında çalışır ve kullanıcının e-postası ancak aynı alan adında okunabilir. Kişisel Gmail hesabıyla yayınlanırsa giriş yapan kişiyi tanıyamaz.
-
-Tercihen kişiye bağlı olmayan bir **servis/birim hesabı** kullanın (ör. `etkinlik@yasar.edu.tr`). Veri tablosu ve EBYS PDF klasörü bu hesabın Drive'ında oluşur.
-
-## Gerekenler
-
-- Node.js 22+ ve npm (testler `node --test` glob desteği ister)
-- Apps Script API açık olmalı: https://script.google.com/home/usersettings
-
-## Adımlar
+## 1. Kendi bilgisayarınızda deneme
 
 ```bash
 npm install
-npx clasp login                      # üniversite hesabıyla
-npx clasp create-script --type standalone --title "Etkinlik Yönetim Sistemi" --rootDir apps-script
-npm test && npm run kontrol
-npx clasp push
-npx clasp open-script
+npm run dev          # http://localhost:3000
 ```
 
-`clasp create-script` proje kökünde `.clasp.json` oluşturur (örnek: `.clasp.json.example`). Bu dosya script kimliğini içerir; `.gitignore`'da değildir, ekip içinde paylaşılabilir.
+Veritabanı otomatik olarak `data/yerel-veritabani` klasöründe oluşur, örnek mekânlar yüklenir ve giriş sayfasında listeden kullanıcı seçersiniz ("Geliştirme girişi"). Bu giriş yalnızca yerelde açıktır; Vercel'de çalışmaz. E-postalar gönderilmez, terminale yazılır. Sıfırlamak için `data/yerel-veritabani` klasörünü silin.
 
-`clasp create-script` yeni projenin varsayılan `appsscript.json` dosyasını indirip bizimkinin üzerine yazabilir. Push etmeden önce `git checkout apps-script/appsscript.json` ile geri alın (saat dilimi, web uygulaması erişimi ve izinler bu dosyadadır).
+Gerekenler: Node.js 22+ ve npm.
 
-Apps Script editöründe:
+## 2. Canlıya alma (Vercel)
 
-1. `kurulum` fonksiyonunu seçip **Çalıştır**. İzinleri onaylayın. Günlükte veri tablosunun adresi yazar.
-2. İsteğe bağlı: `ornekVerileriYukle` ile deneme mekânları ekleyin.
-3. Veri tablosunda **Kullanicilar**, **Mekanlar** ve akademik **Birimler** sayfalarını doldurun.
-4. **Ayarlar** sayfasında `EBYS_NO_REGEX` değerini gerçek EBYS numarası biçimine göre düzeltin; `RESMI_TATILLER`'i girin.
+Toplam yaklaşık 30 dakika. Tek seferlik.
 
-## Yayınlama
+### a) Vercel ve veritabanı
+
+1. https://vercel.com adresinde hesap açın, **Add New > Project** ile bu GitHub deposunu bağlayın. Framework: *Other*; başka ayar gerekmez (`vercel.json` hazır).
+2. Projede **Storage > Create Database > Neon (Postgres)** ekleyin. Bölge: **Frankfurt (eu-central-1)**. Bu, `DATABASE_URL` değişkenini otomatik tanımlar.
+
+### b) Google ile giriş anahtarı
+
+1. https://console.cloud.google.com > yeni proje > **APIs & Services > OAuth consent screen**: tür *Internal* (üniversite Workspace'i ise) veya *External*; uygulama adı "Etkinlik Yönetim Sistemi".
+2. **Credentials > Create credentials > OAuth client ID** > *Web application*.
+3. **Authorized redirect URIs** alanına `https://<vercel-adresiniz>/giris/google/donus` ekleyin (özel alan adı kullanacaksanız onu yazın).
+4. Çıkan **Client ID** ve **Client secret** değerlerini kopyalayın.
+
+### c) E-posta (isteğe bağlı, sonradan da yapılabilir)
+
+https://resend.com hesabı açıp bir **API key** alın. `@yasar.edu.tr` adresinden göndermek için üniversite BT'nin alan adına Resend'in verdiği DNS kayıtlarını eklemesi gerekir; o zamana kadar Resend'in deneme gönderen adresi kullanılır. API anahtarı girilmezse e-posta gitmez, yalnızca Vercel günlüğüne yazılır.
+
+### d) Ortam değişkenleri
+
+Vercel > Settings > Environment Variables bölümüne ([.env.example](../.env.example) dosyasındaki açıklamalarla):
+
+| Değişken | Değer |
+| --- | --- |
+| `OTURUM_SIRRI` | `openssl rand -hex 32` çıktısı |
+| `CRON_SECRET` | `openssl rand -hex 32` çıktısı (gece görevini korur) |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | b adımından |
+| `UYGULAMA_URL` | Canlı adres, ör. `https://etkinlik-yasar.vercel.app` |
+| `RESEND_API_KEY`, `EPOSTA_GONDEREN` | c adımından (isteğe bağlı) |
+
+Değişkenleri ekledikten sonra projeyi yeniden dağıtın (**Deployments > Redeploy**).
+
+### e) Tabloları kurma ve ilk yönetici
+
+Vercel > Storage > Neon > **.env.local** sekmesinden `DATABASE_URL` değerini kopyalayıp kendi bilgisayarınızda:
 
 ```bash
-npx clasp create-deployment --description "v0.1.0"
+DATABASE_URL="postgres://..." ILK_YONETICI_EPOSTA="siz@yasar.edu.tr" npm run kurulum
 ```
 
-veya editörde **Dağıt > Yeni dağıtım > Web uygulaması** (Yürütme: Ben, Erişim: Alan adınızdaki herkes). Çıkan adresi **Ayarlar > UYGULAMA_URL**'ye yazın; e-postalardaki bağlantı bunu kullanır.
+Bu komut tabloları, varsayılan ayarları, hizmet birimlerini ve ilk yöneticiyi oluşturur. Tekrar çalıştırmak güvenlidir.
 
-Sonraki güncellemelerde aynı adresi korumak için:
+### f) Veriyi girme
 
-```bash
-npx clasp push
-npx clasp list-deployments
-npx clasp update-deployment <deploymentId> --description "v0.1.1"
-```
+- **Kullanıcılar:** `/kullanici-ekle` komutuyla `data/kullanicilar.csv` hazırlanır, sonra `DATABASE_URL="..." npm run aktar -- data`. (Dosya adları tablo adıdır: `kullanicilar.csv`, `mekanlar.csv`, `birimler.csv`; var olan kayıtlar atlanır.)
+- **Mekânlar ve birimler:** aynı şekilde `mekanlar.csv`, `birimler.csv`.
+- **Ayarlar** (ör. `EBYS_NO_REGEX`, `RESMI_TATILLER`): Neon panelindeki **SQL Editor**'de, ör. `UPDATE "Ayarlar" SET "Deger" = '...' WHERE "Anahtar" = 'RESMI_TATILLER';`
+- Tek kayıt düzeltmeleri de aynı SQL editöründen yapılır. (İleride yönetim ekranı eklenebilir.)
+
+## Gece görevi
+
+`vercel.json` içindeki Cron her gece 23:00 UTC'de (İstanbul 02:00) `/api/cron/gunluk` adresini çağırır: süresi dolan ön rezervasyonları düşürür, yedeği terfi ettirir, hatırlatma ve tamamlandı işlemlerini yapar. Hobby planda Cron günde bir kez ve saat içinde herhangi bir dakikada çalışabilir. Elle çalıştırmak için: `DATABASE_URL="..." npm run gece-gorevi`.
 
 ## EBYS PDF'leri
 
-PDF'ler kurulumun oluşturduğu "Etkinlik Yönetim Sistemi - EBYS Ekleri" klasörüne kaydedilir ve alan içinde bağlantıyla görüntülenebilir yapılır. Kurum politikası buna izin vermiyorsa klasörü onaycılarla elle paylaşın.
+PDF'ler veritabanındaki `Dosyalar` tablosunda saklanır ve yalnızca etkinlik sahibi, ilgili birim onaycısı ve yöneticiler açabilir. Vercel istek sınırı nedeniyle PDF en fazla **3 MB** olabilir (`EBYS_PDF_MAX_MB` ayarı bunu aşamaz).
 
-## Test ortamı
+## Güncelleme
 
-Canlıya almadan önce ayrı bir Apps Script projesi ve ayrı veri tablosuyla denemek için `Ayarlar > BILDIRIM_AKTIF = HAYIR` yapın; e-posta gitmez.
+Ana dala birleşen her değişiklik Vercel tarafından otomatik yayınlanır; her pull request için ayrı bir deneme adresi çıkar. Veritabanı sütunu eklendiyse yayından sonra `npm run kurulum` yeniden çalıştırılır.
+
+## Eski sistemden (Google Sheets) veri taşıma
+
+Her sayfayı CSV olarak indirin (`Etkinlikler.csv`, `Mekanlar.csv`, `Birimler.csv`, `Kullanicilar.csv`, `Gorevler.csv`, `Log.csv`, `Ayarlar.csv`), bir klasöre koyun ve `DATABASE_URL="..." npm run aktar -- <klasör>` çalıştırın. Eski EBYS PDF bağlantıları (Drive) çalışmaya devam eder ama dosyalar yeni sisteme taşınmaz.
+
+## Lisans ve plan notu
+
+Vercel'in ücretsiz Hobby planı kişisel ve ticari olmayan kullanım içindir; üniversite resmi olarak kullanacaksa Pro plan veya kurumsal hesap gerekebilir. Veriler AB'de (Frankfurt) tutulur; KVKK açısından üniversitenin veri sorumlusuna danışın.

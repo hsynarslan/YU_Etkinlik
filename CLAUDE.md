@@ -6,9 +6,11 @@ Bu dosya Claude Code'un proje bağlamıdır. Her oturumda okunur; kısa ve günc
 
 Kampüste yapılacak etkinliklerin talep → EBYS onayı → hizmet birimi hazırlığı → takvim sürecini yöneten web uygulaması.
 
-- **Arayüz ve sunucu:** Google Apps Script web uygulaması (`apps-script/`)
-- **Veri tabanı:** Google Drive'da bir Google Sheets dosyası (7 sayfa)
-- **Dağıtım:** `clasp` ile push; web uygulaması üniversite Workspace hesabıyla, alan içine yayınlanır
+- **Sunucu:** Node.js + Express (`sunucu/`); Vercel'de tek bir sunucusuz işlev (`api/index.js`), yerelde `npm run dev`
+- **Veri tabanı:** PostgreSQL (canlıda Neon; yerelde ve testlerde PGlite = bellekte/diskte gerçek PostgreSQL)
+- **Arayüz:** Tek sayfa, vanilla JS (`sunucu/arayuz/`)
+- **Giriş:** Google ile giriş (yalnızca `IZINLI_ALAN_ADI` alanı + Kullanicilar tablosunda tanımlı olmak); yerelde geliştirme girişi
+- **Zamanlanmış iş:** Vercel Cron → `/api/cron/gunluk` (her gece 02:00 İstanbul)
 - **Dil:** Kod tanımlayıcıları, arayüz ve dokümanlar Türkçe (ASCII tanımlayıcı: `Etkinlik`, `onayBirimleri`)
 
 İş kuralları için önce `docs/` klasörünü okuyun:
@@ -17,19 +19,23 @@ Kampüste yapılacak etkinliklerin talep → EBYS onayı → hizmet birimi hazı
 | --- | --- |
 | `docs/gereksinimler.md` | Ön rezervasyon, EBYS, muafiyet, detay formu kuralları |
 | `docs/is-akisi.md` | Durumlar, geçişler, gece görevi |
-| `docs/veri-modeli.md` | Sheets sayfaları ve sütunlar |
+| `docs/veri-modeli.md` | Tablolar ve sütunlar |
 | `docs/roller-yetkiler.md` | Roller ve işlem bazlı yetkiler |
-| `docs/kurulum.md` | clasp, kurulum(), yayınlama |
+| `docs/kurulum.md` | Yerel çalıştırma, Vercel/Neon/Google kurulumu |
 
 ## Komutlar
 
 ```bash
-npm test               # Node testleri: saf kurallar + sahte Google servisleriyle uçtan uca akış
-npm run kontrol        # Apps Script sözdizimi, dosya yükleme sırası, istemci→sunucu çağrı eşleşmesi
+npm test               # Node testleri: saf kurallar + bellekte PostgreSQL ile uçtan uca akış + HTTP katmanı
+# gerçek PostgreSQL'e karşı: TEST_DATABASE_URL=postgres://... node --test --test-concurrency=1 "tests/**/*.test.js"
+npm run kontrol        # sözdizimi, istemci→sunucu çağrı eşleşmesi, API izin listesi, vercel.json
 npm run dogrula        # ikisi birden; her değişiklikten sonra çalıştırın
-npm run onizleme       # onizleme/index.html: örnek veriyle arayüz (deploy gerektirmez)
+npm run dev            # http://localhost:3000 (yerel PostgreSQL, geliştirme girişi, örnek veri)
+npm run onizleme       # onizleme/index.html: örnek veriyle arayüz (sunucu gerektirmez)
+npm run kurulum        # tabloları/ayarları kurar (DATABASE_URL ile canlı veritabanında)
+npm run aktar -- data  # CSV'leri veritabanına yükler
+npm run gece-gorevi    # gece görevini elle çalıştırır
 npm run kullanici-kontrol -- data/kullanicilar.csv
-npx clasp push         # Apps Script'e gönderir (kullanıcı onayıyla)
 ```
 
 Proje komutları: `/kullanici-ekle`, `/yeni-alan`, `/yayinla`.
@@ -37,47 +43,52 @@ Proje komutları: `/kullanici-ekle`, `/yeni-alan`, `/yayinla`.
 ## Mimari
 
 ```
-apps-script/
-  Logic.js       Saf iş kuralları + sabitler (DURUM, ROLLER, GECISLER). Google API'si YOK; Node'da test edilir.
-  Config.js      Sayfa adları, HEADERS (sütunlar), VARSAYILAN_AYARLAR, etkinlik türleri
-  Db.js          Sheets okuma/yazma, kilitle_(), ayar_(), logYaz_(), bugun_()/simdi_()
-  Auth.js        aktifKullanici_(), yetkiGerekli_(), rol/birime göre e-posta listeleri
-  Bildirim.js    E-posta (BILDIRIM_AKTIF=HAYIR ise sessiz)
-  Rezervasyon.js Ön rezervasyon, uzatma, iptal, yedek terfisi, gunlukSureKontrolu (gece 02:00)
-  Ebys.js        EBYS no + PDF, onaycı kararı, muaf etkinliğe sonradan EBYS bağlama
-  Etkinlik.js    Detay formu → görevler, görev güncelleme, yönetici durum değişikliği
-  Main.js        doGet, api_ sarmalayıcı, api_baslangic (istemcinin tüm verisi)
-  Setup.js       kurulum(), ornekVerileriYukle() — editörden elle çalıştırılır
-  Index.html / Styles.html / App.html   Tek sayfa arayüz (vanilla JS)
-tests/           node:test; gas-mock.js Google servislerini bellekte taklit eder
-tools/           kontrol.js, onizleme.js, kullanici-kontrol.js
-data/            *.ornek.csv (gerçek listeler .gitignore'da)
+sunucu/
+  logic.js        Saf iş kuralları + sabitler (DURUM, ROLLER, GECISLER). Veritabanı/ağ YOK; Node'da test edilir.
+  config.js       Tablo adları, HEADERS (sütunlar), VARSAYILAN_AYARLAR, etkinlik türleri
+  db.js           PostgreSQL: hepsi/bul/ekle/guncelle, kilitle() (işlem + kilit), ayar(), logYaz(), bugun()/simdi()
+  auth.js         aktifKullanici(eposta), yetkiGerekli(), rol/birime göre e-posta listeleri
+  oturum.js       İmzalı oturum çerezi, Google OIDC, geliştirme girişi
+  bildirim.js     E-posta (Resend; anahtar yoksa günlüğe yazar; BILDIRIM_AKTIF=HAYIR ise sessiz)
+  rezervasyon.js  Ön rezervasyon, uzatma, iptal, yedek terfisi, gunlukSureKontrolu
+  ebys.js         EBYS no + PDF (Dosyalar tablosu), onaycı kararı, muaf etkinliğe sonradan EBYS bağlama
+  etkinlik.js     Detay formu → görevler, görev güncelleme, yönetici durum değişikliği
+  api.js          api_baslangic (istemcinin tüm verisi)
+  ortak.js        api() sarmalayıcı, istemciEtkinlik()
+  uygulama.js     Express: rotalar ve API izin listesi (API)
+  yerel.js, komut.js, kurulum.js   Yerel sunucu, komut satırı işleri, tablo kurulumu
+  arayuz/         index.html, stil.html, uygulama.html
+api/index.js      Vercel giriş noktası
+vercel.json       Bölge (fra1), yönlendirme, cron
+tests/            node:test; ortam.js bellekte PostgreSQL (PGlite) kurar
+tools/            kontrol.js, onizleme.js, kullanici-kontrol.js
+data/             *.ornek.csv (gerçek listeler .gitignore'da)
 ```
 
 ## Kurallar (bunlara uyun)
 
-1. **İş kuralı Logic.js'e.** Yeni bir kural, doğrulama veya yetki önce `Logic.js`'e saf fonksiyon olarak yazılır ve `tests/logic.test.js`'te test edilir. Diğer dosyalar yalnızca Google servisleriyle konuşur.
-2. **Üst düzeyde dosyalar arası bağımlılık yok.** Apps Script dosya yükleme sırasını garanti etmez. Başka dosyadaki bir şeye (`Logic.DURUM`, `SAYFA`) yalnızca fonksiyon içinden erişin. `npm run kontrol` bunu iki sırada yükleyerek denetler.
-3. **Her yazma `kilitle_()` içinde.** Eşzamanlı rezervasyonda çifte kayıt olmasın diye. Kilit içinde önce oku, kontrol et, sonra yaz.
-4. **Durum değişikliği `Logic.gecisKontrol(eski, yeni)` ile** ve her değişiklik `logYaz_()` ile kayda geçer.
-5. **İstemciden çağrılan fonksiyonlar `api_` ile başlar,** `api_(fn)` ile sarılır, `{ ok, mesaj, ... }` döner ve ilk iş `aktifKullanici_()` + `yetkiGerekli_()` çağırır. Sonu `_` ile biten fonksiyonlar istemciye kapalıdır. **Diğer her üst düzey fonksiyon, web uygulamasındaki her kullanıcı tarafından `google.script.run` ile çağrılabilir;** bu yüzden iç yardımcıların adı `_` ile biter. Editörden çalıştırılan `kurulum()` gibi açık fonksiyonlar ilk iş `yalnizcaSahip_()` çağırır. `npm run kontrol` izin listesi dışındaki açık fonksiyonları yakalar.
-6. **Hücreler düz metin.** Tarih `YYYY-AA-GG`, saat `SS:DD`, zaman `YYYY-AA-GGTSS:DD:SS` (Europe/Istanbul). Sheets'in otomatik tarihe çevirmesine güvenmeyin.
-7. **Sütun eklerken** `HEADERS` listesinin sonuna ekleyin, sırayı bozmayın, `docs/veri-modeli.md`'yi güncelleyin; canlıda `kurulum()` çalıştırılmalı.
-8. **Arayüz metinleri Türkçe**, kullanıcıya gösterilen her şey `esc()` ile kaçırılır.
-9. **Kişisel veri (KVKK):** Gerçek kullanıcı listeleri ve e-postalar repoya girmez (`data/*.csv` yok sayılır). Test ve önizlemede yalnızca örnek veri.
-10. Değişiklikten sonra `npm run dogrula`; arayüz değiştiyse `npm run onizleme` ile bakın.
+1. **İş kuralı logic.js'e.** Yeni bir kural, doğrulama veya yetki önce `logic.js`'e saf fonksiyon olarak yazılır ve `tests/logic.test.js`'te test edilir. Diğer dosyalar yalnızca veritabanı/ağla konuşur.
+2. **Her yazma `db.kilitle()` içinde.** Tek veritabanı işlemi + genel kilit açar; eşzamanlı rezervasyonda çifte kayıt olmaz, hata olursa her şey geri alınır. Kilit içinde önce oku, kontrol et, sonra yaz. E-postalar işlem başarıyla bitince gider (`bildir` bunu kendisi ayarlar); kilit içinde başka ağ çağrısı yapmayın.
+3. **Durum değişikliği `Logic.gecisKontrol(eski, yeni)` ile** ve her değişiklik `db.logYaz()` ile kayda geçer.
+4. **İstemciden çağrılan fonksiyonlar `api_` ile başlar,** ilk parametresi oturumdaki kullanıcının e-postasıdır (sunucu çerezden koyar, istemci gönderemez), `api()` ile sarılır, `{ ok, mesaj, ... }` döner ve ilk iş `aktifKullanici(eposta)` + `yetkiGerekli()` çağırır. Yeni bir `api_` fonksiyonu `uygulama.js` > `API` izin listesine de eklenmelidir; listede olmayan hiçbir şey HTTP'den çağrılamaz. `npm run kontrol` eşleşmeyi denetler.
+5. **Hücreler düz metin (TEXT).** Tarih `YYYY-AA-GG`, saat `SS:DD`, zaman `YYYY-AA-GGTSS:DD:SS` (Europe/Istanbul).
+6. **Sütun eklerken** `HEADERS` listesinin sonuna ekleyin, sırayı bozmayın, `docs/veri-modeli.md`'yi güncelleyin; canlıda `npm run kurulum` çalıştırılmalı.
+7. **Arayüz metinleri Türkçe**, kullanıcıya gösterilen her şey `esc()` ile kaçırılır.
+8. **Kişisel veri (KVKK):** Gerçek kullanıcı listeleri, e-postalar, gizli anahtarlar (`DATABASE_URL`, `OTURUM_SIRRI`, `GOOGLE_CLIENT_SECRET`…) repoya girmez (`data/*.csv`, `.env*` yok sayılır). Test ve önizlemede yalnızca örnek veri.
+9. **Vercel sınırları:** diske kalıcı yazılmaz (dosyalar veritabanına), istek gövdesi en fazla 4,5 MB (PDF 3 MB), işlev kısa ömürlüdür (bellekte durum tutulmaz).
+10. Değişiklikten sonra `npm run dogrula`; arayüz değiştiyse `npm run onizleme` veya `npm run dev` ile bakın.
 
 ## Bilinen sınırlar
 
-- Sheets yılda birkaç bin etkinlik için yeterli. `api_baslangic` her çağrıda tüm sayfaları okur; yavaşlarsa önce burada önbellek/filtre düşünün.
+- Bu sürümde mekân/kullanıcı/ayar düzenleme ekranı yok; CSV (`npm run aktar`) veya Neon SQL editörü kullanılır. Yönetim ekranı yol haritasında.
+- `api_baslangic` her çağrıda tüm tabloları okur; yılda birkaç bin etkinlik için yeterli, yavaşlarsa önce burada filtre/önbellek düşünün.
 - EBYS ile doğrudan entegrasyon yok; kontrol PDF + onaycıyla yapılır.
-- Apps Script web uygulaması iframe içinde çalışır; `localStorage` güvenilir değildir.
-- Gece görevi `kurulum()` ile kurulur; script sahibinin hesabıyla çalışır.
+- Vercel Hobby planı ticari olmayan kullanım içindir; Cron günde bir kez ve saat içinde herhangi bir dakikada çalışır.
 
 ## Açık sorular (kullanıcıdan bekleniyor)
 
 - [ ] Etkinlik talebi açabilecek / onaylayabilecek **kullanıcı listesi** (gelince `/kullanici-ekle`)
-- [ ] Personelin tamamı `@yasar.edu.tr` Google Workspace hesabıyla mı giriş yapıyor? (Değilse `IZINLI_ALAN_ADI` ve yayın ayarı değişir)
+- [ ] Personelin tamamı `@yasar.edu.tr` Google hesabıyla mı giriş yapıyor? (Değilse `IZINLI_ALAN_ADI` ayarı ve giriş yöntemi değişir)
 - [ ] Gerçek **EBYS numarası biçimi** (`EBYS_NO_REGEX`)
 - [ ] Gerçek **mekân listesi** ve kapasiteler; akademik/idari **birim kodları**
 - [ ] Ön rezervasyon süresi (varsayılan 10 iş günü) EBYS onayının gerçek süresine uygun mu?
@@ -87,6 +98,7 @@ data/            *.ornek.csv (gerçek listeler .gitignore'da)
 
 1. Pilot: bir fakülte + hizmet birimleriyle 1–2 ay
 2. Etkinlik sonrası değerlendirme formu (katılım sayısı, fotoğraflar, sorunlar)
-3. Raporlama: birim/mekân/ay bazında etkinlik sayıları (Sheets üzerinde ayrı sayfa veya Looker Studio)
-4. Google Takvim'e kesinleşen etkinlikleri yazma (salon takvimleri)
-5. Herkese açık kampüs etkinlik takvimi sayfası
+3. Raporlama: birim/mekân/ay bazında etkinlik sayıları (ayrı bir rapor sayfası veya Looker Studio)
+4. Yönetim ekranı (mekân, kullanıcı, ayar düzenleme)
+5. Google Takvim'e kesinleşen etkinlikleri yazma (salon takvimleri)
+6. Herkese açık kampüs etkinlik takvimi sayfası

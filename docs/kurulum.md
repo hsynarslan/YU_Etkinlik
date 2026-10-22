@@ -9,7 +9,7 @@ npm install
 npm run dev          # http://localhost:3000
 ```
 
-Veritabanı otomatik olarak `data/yerel-veritabani` klasöründe oluşur, örnek mekânlar yüklenir ve giriş sayfasında listeden kullanıcı seçersiniz ("Geliştirme girişi"). Bu giriş yalnızca yerelde açıktır; Vercel'de çalışmaz. E-postalar gönderilmez, terminale yazılır. Sıfırlamak için `data/yerel-veritabani` klasörünü silin.
+Veritabanı otomatik olarak `data/yerel-veritabani` klasöründe oluşur, örnek mekânlar yüklenir ve giriş sayfasındaki "Geliştirme girişi" bağlantısıyla şifresiz, listeden kullanıcı seçersiniz. Bu giriş yalnızca yerelde açıktır; Vercel'de çalışmaz. E-postalar gönderilmez, terminale yazılır. Sıfırlamak için `data/yerel-veritabani` klasörünü silin.
 
 Gerekenler: Node.js 22+ ve npm.
 
@@ -22,18 +22,11 @@ Toplam yaklaşık 30 dakika. Tek seferlik.
 1. https://vercel.com adresinde hesap açın, **Add New > Project** ile bu GitHub deposunu bağlayın. Framework: *Other*; başka ayar gerekmez (`vercel.json` hazır).
 2. Projede **Storage > Create Database > Neon (Postgres)** ekleyin. Bölge: **Frankfurt (eu-central-1)**. Bu, `DATABASE_URL` değişkenini otomatik tanımlar.
 
-### b) Google ile giriş anahtarı
-
-1. https://console.cloud.google.com > yeni proje > **APIs & Services > OAuth consent screen**: tür *Internal* (üniversite Workspace'i ise) veya *External*; uygulama adı "Etkinlik Yönetim Sistemi".
-2. **Credentials > Create credentials > OAuth client ID** > *Web application*.
-3. **Authorized redirect URIs** alanına `https://<vercel-adresiniz>/giris/google/donus` ekleyin (özel alan adı kullanacaksanız onu yazın).
-4. Çıkan **Client ID** ve **Client secret** değerlerini kopyalayın.
-
-### c) E-posta (isteğe bağlı, sonradan da yapılabilir)
+### b) E-posta (isteğe bağlı, sonradan da yapılabilir)
 
 https://resend.com hesabı açıp bir **API key** alın. `@yasar.edu.tr` adresinden göndermek için üniversite BT'nin alan adına Resend'in verdiği DNS kayıtlarını eklemesi gerekir; o zamana kadar Resend'in deneme gönderen adresi kullanılır. API anahtarı girilmezse e-posta gitmez, yalnızca Vercel günlüğüne yazılır.
 
-### d) Ortam değişkenleri
+### c) Ortam değişkenleri
 
 Vercel > Settings > Environment Variables bölümüne ([.env.example](../.env.example) dosyasındaki açıklamalarla):
 
@@ -41,13 +34,12 @@ Vercel > Settings > Environment Variables bölümüne ([.env.example](../.env.ex
 | --- | --- |
 | `OTURUM_SIRRI` | `openssl rand -hex 32` çıktısı |
 | `CRON_SECRET` | `openssl rand -hex 32` çıktısı (gece görevini korur) |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | b adımından |
 | `UYGULAMA_URL` | Canlı adres, ör. `https://etkinlik-yasar.vercel.app` |
-| `RESEND_API_KEY`, `EPOSTA_GONDEREN` | c adımından (isteğe bağlı) |
+| `RESEND_API_KEY`, `EPOSTA_GONDEREN` | b adımından (isteğe bağlı) |
 
 Değişkenleri ekledikten sonra projeyi yeniden dağıtın (**Deployments > Redeploy**).
 
-### e) Tabloları kurma ve ilk yönetici
+### d) Tabloları kurma ve ilk yönetici
 
 Vercel > Storage > Neon > **.env.local** sekmesinden `DATABASE_URL` değerini kopyalayıp kendi bilgisayarınızda:
 
@@ -55,11 +47,12 @@ Vercel > Storage > Neon > **.env.local** sekmesinden `DATABASE_URL` değerini ko
 DATABASE_URL="postgres://..." ILK_YONETICI_EPOSTA="siz@yasar.edu.tr" npm run kurulum
 ```
 
-Bu komut tabloları, varsayılan ayarları, hizmet birimlerini ve ilk yöneticiyi oluşturur. Tekrar çalıştırmak güvenlidir.
+Bu komut tabloları, varsayılan ayarları, hizmet birimlerini ve ilk yöneticiyi oluşturur ve **ilk yöneticinin rastgele şifresini bir kez ekrana yazar** (not alın; girişte Hesabım sekmesinden değiştirin). Tekrar çalıştırmak güvenlidir.
 
-### f) Veriyi girme
+### e) Veriyi girme
 
 - **Kullanıcılar:** `/kullanici-ekle` komutuyla `data/kullanicilar.csv` hazırlanır, sonra `DATABASE_URL="..." npm run aktar -- data`. (Dosya adları tablo adıdır: `kullanicilar.csv`, `mekanlar.csv`, `birimler.csv`; var olan kayıtlar atlanır.)
+- **Şifreler:** `DATABASE_URL="..." npm run sifre -- --hepsi` şifresi olmayan her kullanıcıya rastgele şifre üretir ve listeler (bir kez gösterilir; her kişiye kendi şifresini ayrıca iletin). Tek kişi için: `npm run sifre -- ornek@yasar.edu.tr` (rastgele şifre yazar) veya `npm run sifre -- ornek@yasar.edu.tr YeniSifre123`. Unutulan şifre de aynı komutla yeniden belirlenir; kilitli hesabın kilidi de açılır.
 - **Mekânlar ve birimler:** aynı şekilde `mekanlar.csv`, `birimler.csv`.
 - **Ayarlar** (ör. `EBYS_NO_REGEX`, `RESMI_TATILLER`): Neon panelindeki **SQL Editor**'de, ör. `UPDATE "Ayarlar" SET "Deger" = '...' WHERE "Anahtar" = 'RESMI_TATILLER';`
 - Tek kayıt düzeltmeleri de aynı SQL editöründen yapılır. (İleride yönetim ekranı eklenebilir.)

@@ -3,19 +3,21 @@
  *
  * kurulum()            : Tabloları, ayarları, hizmet birimlerini ve ilk yöneticiyi hazırlar.
  *                        Tekrar çalıştırmak güvenlidir; var olanı silmez, eksikleri tamamlar.
+ *                        İlk yönetici oluşturulduysa { eposta, sifre } döndürür (şifre bir kez gösterilir).
  * ornekVerileriYukle() : Boş Mekanlar/Birimler tablolarına deneme verisi ekler.
  */
 const Logic = require('./logic');
 const { SAYFA, VARSAYILAN_AYARLAR } = require('./config');
 const db = require('./db');
+const sifre = require('./sifre');
 
 async function kurulum(opts) {
   opts = opts || {};
   await db.semaHazirla();
-  await db.kilitle(async () => {
+  return db.kilitle(async () => {
     await ayarlariTamamla();
     await hizmetBirimleriniTohumla();
-    await ilkYoneticiyiEkle(opts.yonetici || process.env.ILK_YONETICI_EPOSTA);
+    return ilkYoneticiyiEkle(opts.yonetici || process.env.ILK_YONETICI_EPOSTA);
   });
 }
 
@@ -42,13 +44,15 @@ async function hizmetBirimleriniTohumla() {
 }
 
 async function ilkYoneticiyiEkle(eposta) {
-  if ((await db.hepsi(SAYFA.KULLANICILAR)).length) return;
+  if ((await db.hepsi(SAYFA.KULLANICILAR)).length) return null;
   eposta = String(eposta || '').toLowerCase().trim();
-  if (!eposta) return;
+  if (!eposta) return null;
+  const ilkSifre = sifre.rastgele(12);
   await db.ekle(SAYFA.KULLANICILAR, {
     Eposta: eposta, AdSoyad: 'Sistem Yöneticisi', Birim: 'YONETIM',
-    Roller: 'YONETICI', OnayBirimleri: '', Aktif: 'EVET'
+    Roller: 'YONETICI', OnayBirimleri: '', Aktif: 'EVET', SifreHash: sifre.ozetle(ilkSifre)
   });
+  return { eposta, sifre: ilkSifre };
 }
 
 /** Deneme için örnek mekân ve akademik birim ekler. Gerçek verileri girince bu kayıtları silin. */

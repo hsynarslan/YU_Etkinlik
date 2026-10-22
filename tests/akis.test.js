@@ -205,10 +205,6 @@ test('tanımsız kullanıcı ve başka alan adı giremez', async () => {
     let r = await c.api_baslangic();
     assert.equal(r.ok, false);
     assert.match(r.mesaj, /tanımlı değil/);
-    giris('biri@gmail.com');
-    r = await c.api_baslangic();
-    assert.equal(r.ok, false);
-    assert.match(r.mesaj, /yasar\.edu\.tr/);
     giris('');
     assert.equal((await c.api_baslangic()).ok, false);
   } finally { await kapat(); }
@@ -254,5 +250,79 @@ test('EBYS PDF dosyası yalnızca yetkili kullanıcıya açılır', async () => 
     assert.ok(await dosyaGetir('kurucu@yasar.edu.tr', dosyaId), 'yönetici açabilir');
     await assert.rejects(dosyaGetir('talep2@yasar.edu.tr', dosyaId), /yetkiniz yok/);
     await assert.rejects(dosyaGetir('bi@yasar.edu.tr', dosyaId), /yetkiniz yok/);
+  } finally { await kapat(); }
+});
+
+test('şifreyle giriş: doğru şifre girer, yanlış ve bilinmeyen kullanıcı aynı mesajı alır', async () => {
+  const sifre = require('../sunucu/sifre');
+  const { db, kapat } = await ortam();
+  try {
+    await sifre.sifreBelirle('talep@yasar.edu.tr', 'GucluSifre123');
+    assert.equal(await sifre.girisYap('Talep@Yasar.edu.tr ', 'GucluSifre123'), 'talep@yasar.edu.tr');
+    await assert.rejects(sifre.girisYap('talep@yasar.edu.tr', 'yanlis-sifre'), new RegExp(sifre.GENEL_HATA));
+    await assert.rejects(sifre.girisYap('yok@yasar.edu.tr', 'GucluSifre123'), new RegExp(sifre.GENEL_HATA));
+    await assert.rejects(sifre.girisYap('onay@yasar.edu.tr', 'GucluSifre123'), new RegExp(sifre.GENEL_HATA), 'şifresi olmayan kullanıcı giremez');
+    await assert.rejects(sifre.girisYap('talep@yasar.edu.tr', ''), new RegExp(sifre.GENEL_HATA));
+    const k = await db.bul('Kullanicilar', 'Eposta', 'talep@yasar.edu.tr');
+    assert.ok(k.SifreHash.startsWith('scrypt$'));
+    assert.ok(!k.SifreHash.includes('GucluSifre123'), 'düz şifre saklanmamalı');
+    // pasif kullanıcı giremez
+    await db.guncelle('Kullanicilar', 'Eposta', 'talep@yasar.edu.tr', { Aktif: 'HAYIR' });
+    await assert.rejects(sifre.girisYap('talep@yasar.edu.tr', 'GucluSifre123'), new RegExp(sifre.GENEL_HATA));
+  } finally { await kapat(); }
+});
+
+test('5 hatalı denemeden sonra hesap kilitlenir, doğru şifre de kabul edilmez; süre dolunca açılır', async () => {
+  const sifre = require('../sunucu/sifre');
+  const { db, kapat } = await ortam();
+  try {
+    await sifre.sifreBelirle('talep@yasar.edu.tr', 'GucluSifre123');
+    for (let i = 0; i < 4; i++) await assert.rejects(sifre.girisYap('talep@yasar.edu.tr', 'x'), new RegExp(sifre.GENEL_HATA));
+    await assert.rejects(sifre.girisYap('talep@yasar.edu.tr', 'x'), /Çok fazla hatalı deneme/);
+    await assert.rejects(sifre.girisYap('talep@yasar.edu.tr', 'GucluSifre123'), /Çok fazla hatalı deneme/);
+    assert.ok((await db.hepsi('Log')).some((l) => l.Islem === 'HESAP_KILITLENDI'));
+    const simdi = Date.now();
+    db.saatAyarla(() => new Date(simdi + 16 * 60000));
+    assert.equal(await sifre.girisYap('talep@yasar.edu.tr', 'GucluSifre123'), 'talep@yasar.edu.tr');
+    db.saatAyarla(null);
+    // başarılı giriş sayacı sıfırlar
+    for (let i = 0; i < 3; i++) await assert.rejects(sifre.girisYap('talep@yasar.edu.tr', 'x'));
+    await sifre.girisYap('talep@yasar.edu.tr', 'GucluSifre123');
+    for (let i = 0; i < 3; i++) await assert.rejects(sifre.girisYap('talep@yasar.edu.tr', 'x'), new RegExp(sifre.GENEL_HATA));
+  } finally { db.saatAyarla(null); await kapat(); }
+});
+
+test('kullanıcı kendi şifresini değiştirir; eksik şifreleri yönetici toplu üretir', async () => {
+  const sifre = require('../sunucu/sifre');
+  const { c, db, giris, kapat } = await ortam();
+  try {
+    const uretilen = await sifre.eksikSifreleriUret();
+    assert.equal(uretilen.length, 6, 'şifresi olmayan 6 kullanıcı (ilk yöneticiyi kurulum zaten şifreledi)');
+    assert.ok(uretilen.every((x) => x.sifre.length === 12));
+    assert.deepEqual(await sifre.eksikSifreleriUret(), [], 'ikinci çalıştırma yeni şifre üretmemeli');
+    const t = uretilen.find((x) => x.eposta === 'talep@yasar.edu.tr');
+    assert.equal(await sifre.girisYap('talep@yasar.edu.tr', t.sifre), 'talep@yasar.edu.tr');
+
+    giris('talep@yasar.edu.tr');
+    assert.equal((await c.api_sifreDegistir('yanlis', 'YeniSifre12345')).ok, false);
+    assert.match((await c.api_sifreDegistir(t.sifre, 'kisa')).mesaj, /en az 8/);
+    assert.match((await c.api_sifreDegistir(t.sifre, t.sifre)).mesaj, /farklı/);
+    assert.equal((await c.api_sifreDegistir(t.sifre, 'YeniSifre12345')).ok, true);
+    await assert.rejects(sifre.girisYap('talep@yasar.edu.tr', t.sifre));
+    assert.equal(await sifre.girisYap('talep@yasar.edu.tr', 'YeniSifre12345'), 'talep@yasar.edu.tr');
+    assert.ok((await db.hepsi('Log')).some((l) => l.Islem === 'SIFRE_DEGISTI'));
+  } finally { await kapat(); }
+});
+
+test('kurulum ilk yöneticiyi rastgele şifreyle oluşturur', async () => {
+  const sifre = require('../sunucu/sifre');
+  const { db, kapat } = await ortam();
+  try {
+    await db.sorgu('DELETE FROM "Kullanicilar"');
+    const { kurulum } = require('../sunucu/kurulum');
+    const y = await kurulum({ yonetici: 'Yeni@Yasar.edu.tr' });
+    assert.equal(y.eposta, 'yeni@yasar.edu.tr');
+    assert.equal(await sifre.girisYap('yeni@yasar.edu.tr', y.sifre), 'yeni@yasar.edu.tr');
+    assert.equal(await kurulum({ yonetici: 'baska@yasar.edu.tr' }), null, 'kullanıcı varsa yeni yönetici eklenmez');
   } finally { await kapat(); }
 });

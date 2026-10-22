@@ -50,12 +50,14 @@ Kullanıcılar veritabanına doğrudan erişmez; yalnızca sunucu bağlanır ve 
 
 | Sütun | Açıklama |
 | --- | --- |
-| Eposta | Google (üniversite) hesabıyla birebir aynı, küçük harf |
+| Eposta | Giriş adı ve bildirim adresi, küçük harf |
 | AdSoyad | |
 | Birim | BirimID |
 | Roller | Virgülle: `TALEP_EDEN, BIRIM_ONAYCI, HIZMET_BIRIMI, EBYS_MUAF, YONETICI` |
 | OnayBirimleri | Onaycının EBYS kontrolünü yaptığı BirimID'ler, virgülle |
 | Aktif | `EVET` / `HAYIR` |
+| SifreHash | Şifrenin tuzlu scrypt özeti (`npm run sifre` doldurur; elle düzenlemeyin) |
+| BasarisizDeneme, KilitBitis | Hatalı giriş sayacı ve kilidin bitiş zamanı (epoch milisaniye) |
 
 Rollerin anlamı için bkz. roller-yetkiler.md. Liste `data/kullanicilar.ornek.csv` biçiminde hazırlanıp `npm run kullanici-kontrol -- dosya.csv` ile denetlenebilir.
 

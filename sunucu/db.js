@@ -226,6 +226,8 @@ function parcalar(tarih) {
 let saat = () => new Date();
 function saatAyarla(fn) { saat = fn || (() => new Date()); }
 
+function simdiMs() { return saat().getTime(); }
+
 function bugun() {
   const p = parcalar(saat());
   return `${p.year}-${p.month}-${p.day}`;
@@ -279,6 +281,6 @@ async function logYaz(eposta, etkinlikId, islem, detay) {
 module.exports = {
   baglan, pgAdaptor, pgliteAdaptor, kapat, sorgu, semaHazirla,
   hepsi, bul, ekle, guncelle, kilitle, islemSonrasi,
-  bugun, simdi, yeniId, saatAyarla,
+  bugun, simdi, simdiMs, yeniId, saatAyarla,
   ayar, ayarSayi, ayarYaz, resmiTatiller, logYaz
 };

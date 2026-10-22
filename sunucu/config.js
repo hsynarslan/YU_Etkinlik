@@ -32,7 +32,7 @@ const HEADERS = {
   ],
   Mekanlar: ['MekanID', 'Ad', 'Bina', 'Kapasite', 'SorumluBirim', 'Aktif'],
   Birimler: ['BirimID', 'Ad', 'Tur', 'Eposta'],
-  Kullanicilar: ['Eposta', 'AdSoyad', 'Birim', 'Roller', 'OnayBirimleri', 'Aktif'],
+  Kullanicilar: ['Eposta', 'AdSoyad', 'Birim', 'Roller', 'OnayBirimleri', 'Aktif', 'SifreHash', 'BasarisizDeneme', 'KilitBitis'],
   Gorevler: ['GorevID', 'EtkinlikID', 'Birim', 'Tur', 'Aciklama', 'Durum', 'Not', 'GuncelleyenEposta', 'GuncellemeZamani'],
   Log: ['Zaman', 'Eposta', 'EtkinlikID', 'Islem', 'Detay'],
   Ayarlar: ['Anahtar', 'Deger', 'Aciklama']
@@ -46,7 +46,6 @@ const VARSAYILAN_AYARLAR = [
   ['ASGARI_BASVURU_GUN', '10', 'Standart etkinlikte etkinlik tarihine en az kaç gün kala başvurulmalı'],
   ['ASGARI_BASVURU_UST_DUZEY_GUN', '20', 'Üst düzey protokollü etkinlikte asgari başvuru süresi (gün)'],
   ['HATIRLATMA_GUN', '2', 'Ön rezervasyon bitişinden kaç iş günü önce hatırlatma gönderilsin'],
-  ['IZINLI_ALAN_ADI', 'yasar.edu.tr', 'Yalnızca bu alan adındaki hesaplar giriş yapabilir (boş = kontrol yok)'],
   ['EBYS_NO_REGEX', '^[A-Za-z0-9./\\-]{4,40}$', 'EBYS numarası biçimi (düzenli ifade). Gerçek biçime göre güncelleyin.'],
   ['EBYS_PDF_MAX_MB', '3', 'Yüklenebilecek en büyük PDF boyutu (MB). Vercel istek sınırı nedeniyle en fazla 3.'],
   ['RESMI_TATILLER', '', 'Virgülle ayrılmış YYYY-AA-GG tarihleri; iş günü hesabında atlanır'],
